@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1d21">
+  <title>CardScan</title>
+  <style>
+    :root {
+      --bg: #1a1d21; --surface: #24282e; --border: #3a4049;
+      --text: #e8eaed; --text-muted: #9aa0a6; --accent: #3b82f6; --err: #dc4848; --radius: 14px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px; line-height: 1.45;
+    }
+    .app { max-width: 420px; margin: 0 auto; padding: 56px 16px; }
+    header { text-align: center; margin-bottom: 24px; }
+    header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+    .sub { color: var(--text-muted); font-size: 14px; margin-top: 8px; line-height: 1.5; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 16px; }
+    label.lbl { display: block; font-size: 14px; color: var(--text-muted); margin: 0 0 6px; }
+    input[type="text"] {
+      width: 100%; padding: 13px 14px; font-size: 16px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px; outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 15px 16px; font-size: 16px; font-weight: 600; color: #fff;
+      background: var(--accent); border: 1px solid var(--accent); border-radius: 12px;
+      cursor: pointer; margin-top: 16px;
+    }
+    .btn:active { transform: scale(0.99); }
+    .status {
+      margin-top: 14px; padding: 12px 14px; border-radius: 12px; font-size: 14px;
+      background: rgba(220,72,72,0.12); border: 1px solid var(--err); color: #ffc9c9;
+    }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🪪 CardScan</h1>
+      <p class="sub">
+        Укажите адрес сервера на офисном ПК — его показывает страница
+        <b>«Подключение телефона»</b> (<code>/connect</code>) на компьютере,
+        где запущен сканер визиток.
+      </p>
+    </header>
+
+    <div class="card">
+      <label class="lbl" for="serverUrl">Адрес сервера</label>
+      <input type="text" id="serverUrl" placeholder="http://192.168.1.50:8000" autocomplete="off">
+      <button class="btn" id="connectBtn">Подключиться</button>
+      <div class="status hidden" id="status"></div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    function $(id) { return document.getElementById(id); }
+    var STORAGE_KEY = "cardscan.serverUrl";
+
+    function normalizeUrl(raw) {
+      var v = (raw || "").trim().replace(/\/+$/, "");
+      if (!v) { return ""; }
+      if (!/^https?:\/\//i.test(v)) { v = "http://" + v; }
+      return v;
+    }
+
+    function showError(text) {
+      var el = $("status");
+      el.textContent = text;
+      el.classList.remove("hidden");
+    }
+
+    function goTo(baseUrl) {
+      window.location.href = baseUrl + "/login";
+    }
+
+    // Адрес уже сохранён на этом устройстве — сразу переходим к серверу.
+    var saved = null;
+    try { saved = window.localStorage.getItem(STORAGE_KEY); } catch (e) { /* ignore */ }
+    if (saved) {
+      goTo(saved);
+      return;
+    }
+
+    $("connectBtn").addEventListener("click", function () {
+      var url = normalizeUrl($("serverUrl").value);
+      if (!url) {
+        showError("Введите адрес сервера, например http://192.168.1.50:8000");
+        return;
+      }
+      try { window.localStorage.setItem(STORAGE_KEY, url); } catch (e) { /* ignore */ }
+      goTo(url);
+    });
+
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { $("connectBtn").click(); }
+    });
+  })();
+  </script>
+</body>
+</html>

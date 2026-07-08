@@ -23,6 +23,13 @@ dist/
 _entry.py
 Output/
 
+# --- Android-приложение (Capacitor) ---
+android-app/node_modules/
+android-app/android/
+android-app/android-sdk/
+android-app/.gradle/
+android-app/*.log
+
 # --- Прочее ---
 *.log
 .DS_Store

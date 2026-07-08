@@ -1,0 +1,9 @@
+{
+  "appId": "ru.cardscan.app",
+  "appName": "CardScan",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  }
+}
