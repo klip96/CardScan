@@ -11,7 +11,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional
 
 from .recognizers.base import CardData
 
@@ -77,6 +77,11 @@ class SheetsWriter:
         "Комментарий",
         "Фото визитки",
     ]
+
+    #: Буквы колонок «Статус лида» / «Комментарий» — совпадают с позицией
+    #: в HEADERS (15-я и 16-я), заданы явно, т.к. используются в A1-диапазонах.
+    STATUS_COL_LETTER = "O"
+    COMMENT_COL_LETTER = "P"
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -287,3 +292,31 @@ class SheetsWriter:
             return len(ws.col_values(1))
         except Exception:
             return 0
+
+    # ----- обратное чтение статуса лида (для синхронизации в мобильное приложение) -----
+    def read_statuses(self, rows: List[int]) -> Dict[int, Dict[str, str]]:
+        """Читает «Статус лида» и «Комментарий» для заданных номеров строк.
+
+        Один батч-запрос (batch_get) на все строки сразу — вызывается на
+        каждый /jobs с телефона, поэтому важно не делать по запросу на строку.
+        Возвращает {номер_строки: {"status": ..., "comment": ...}}; строки,
+        для которых Sheets не вернул значений, в результате отсутствуют.
+        """
+        wanted = sorted({r for r in rows if r and r > 1})
+        if not wanted:
+            return {}
+
+        ws = self._worksheet()
+        ranges = [
+            "{0}{2}:{1}{2}".format(self.STATUS_COL_LETTER, self.COMMENT_COL_LETTER, r)
+            for r in wanted
+        ]
+        grids = ws.batch_get(ranges)
+
+        out: Dict[int, Dict[str, str]] = {}
+        for row, grid in zip(wanted, grids):
+            values = grid[0] if grid else []
+            status = values[0] if len(values) > 0 else ""
+            comment = values[1] if len(values) > 1 else ""
+            out[row] = {"status": str(status).strip(), "comment": str(comment).strip()}
+        return out

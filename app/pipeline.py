@@ -46,6 +46,12 @@ class Job:
     error: Optional[str] = None
     sheet_row: Optional[int] = None
     sheet_rows: Optional[List[int]] = None
+    # Статус лида ("взято в работу"/"наш пользователь"/"решение конкурентов")
+    # и комментарий из колонок Google Sheets — по одному на каждую визитку,
+    # выровнены по индексу с results/sheet_rows. Заполняются офис-менеджером
+    # в таблице и подтягиваются обратно через JobManager.refresh_lead_statuses().
+    lead_statuses: Optional[List[str]] = None
+    lead_comments: Optional[List[str]] = None
 
     def to_public(self) -> Dict[str, Any]:
         """Представление джоба для отдачи в UI."""
@@ -62,6 +68,8 @@ class Job:
             "error": self.error,
             "sheet_row": self.sheet_row,
             "sheet_rows": self.sheet_rows,
+            "lead_statuses": self.lead_statuses,
+            "lead_comments": self.lead_comments,
         }
 
 
@@ -74,6 +82,7 @@ class JobManager:
         self._jobs: Dict[str, Job] = {}
         self._order: List[str] = []  # порядок поступления
         self._worker_task: Optional[asyncio.Task] = None
+        self._writer: Optional[Any] = None  # кэш SheetsWriter (авторизация не на каждый вызов)
 
     # ----- управление жизненным циклом -----
     def start(self) -> None:
@@ -113,6 +122,41 @@ class JobManager:
 
     def get_job(self, job_id: str) -> Optional[Job]:
         return self._jobs.get(job_id)
+
+    def _sheets_writer(self) -> Any:
+        if self._writer is None:
+            from app.sheets import SheetsWriter  # ленивый импорт
+
+            self._writer = SheetsWriter(self.config)
+        return self._writer
+
+    async def refresh_lead_statuses(self) -> None:
+        """Подтягивает статус лида/комментарий из Google Sheets для записанных визиток.
+
+        Вызывается на каждый /jobs (поллинг с телефона), поэтому все номера
+        строк читаются ОДНИМ батч-запросом, а не по одному на визитку.
+        Ошибки (нет сети, не настроена таблица) не критичны — просто не
+        обновляем статусы в этом тике.
+        """
+        if not self.config.get("google_sheets.enabled", True):
+            return
+
+        targets = [j for j in self._jobs.values() if j.sheet_rows]
+        rows: List[int] = []
+        for j in targets:
+            rows.extend(r for r in j.sheet_rows if r)
+        if not rows:
+            return
+
+        try:
+            statuses = await asyncio.to_thread(self._sheets_writer().read_statuses, rows)
+        except Exception as exc:  # noqa: BLE001 — не критично для основного функционала
+            logger.debug("Не удалось обновить статусы лидов из таблицы: %s", exc)
+            return
+
+        for j in targets:
+            j.lead_statuses = [(statuses.get(r) or {}).get("status", "") for r in j.sheet_rows]
+            j.lead_comments = [(statuses.get(r) or {}).get("comment", "") for r in j.sheet_rows]
 
     # ----- воркер -----
     async def _worker_loop(self) -> None:

@@ -8,7 +8,8 @@
     GET  /static/*    — статика фронтенда
     GET  /photos/*    — сохранённые снимки визиток
     POST /upload      — приём фото (multipart), мгновенная постановка в очередь
-    GET  /jobs        — статусы джобов (для живой ленты)
+    GET  /jobs        — статусы джобов (для живой ленты); попутно подтягивает
+                        актуальный «Статус лида»/комментарий из Google Sheets
     GET  /settings    — текущие настройки (ключи замаскированы)
     POST /settings    — обновление настроек
     GET  /health      — проверка живости
@@ -333,7 +334,9 @@ async def upload(image: UploadFile, source_event: str = Form("")) -> Dict[str, s
 
 @app.get("/jobs")
 async def jobs() -> Dict[str, Any]:
-    return {"jobs": _manager(app).list_jobs()}
+    manager = _manager(app)
+    await manager.refresh_lead_statuses()
+    return {"jobs": manager.list_jobs()}
 
 
 @app.get("/settings")

@@ -10,8 +10,12 @@
  *   POST /upload  multipart/form-data: image=(файл), source_event=(строка)
  *                 -> { "job_id": "..." }
  *   GET  /jobs    -> { "jobs": [ { id, status, created_at, source_event,
- *                                  filename, result|null, error|null } ] }
- *   Статусы: queued | recognizing | enriching | writing | done | failed
+ *                                  filename, result|null, results|null, error|null,
+ *                                  sheet_rows|null, lead_statuses|null, lead_comments|null } ] }
+ *   Статусы обработки: queued | recognizing | enriching | writing | done | failed
+ *   lead_statuses/lead_comments — статус лида и комментарий из Google Sheets
+ *   (заполняет офис-менеджер), выровнены по индексу с results. Пустая строка —
+ *   решение по лиду ещё не принято.
  */
 (function () {
   "use strict";
@@ -64,6 +68,15 @@
     writing: "processing",
     done: "done",
     failed: "failed"
+  };
+
+  // Статус лида (колонка "Статус лида" в Google Sheets) — заполняется
+  // офис-менеджером вручную, значения не фиксированы жёстко, поэтому
+  // сравниваем без учёта регистра и красим только известные варианты.
+  var LEAD_STATUS_META = {
+    "взято в работу": { css: "lead-progress", icon: "🟠" },
+    "наш пользователь": { css: "lead-won", icon: "🟢" },
+    "решение конкурентов": { css: "lead-lost", icon: "🔴" }
   };
 
   // ----- Источник (сохраняется на устройстве) -----
@@ -264,6 +277,36 @@
     return job.result ? [job.result] : [];
   }
 
+  // Статус лида для карточки с индексом i (выровнен с results/lead_statuses).
+  function leadStatusFor(job, i) {
+    var arr = job.lead_statuses;
+    if (!arr || i >= arr.length) { return ""; }
+    return (arr[i] || "").trim();
+  }
+
+  function leadCommentFor(job, i) {
+    var arr = job.lead_comments;
+    if (!arr || i >= arr.length) { return ""; }
+    return (arr[i] || "").trim();
+  }
+
+  function leadStatusMeta(status) {
+    return LEAD_STATUS_META[status.toLowerCase()] || { css: "lead-other", icon: "🔵" };
+  }
+
+  // Бейдж статуса лида: <span class="lead-badge lead-...">🟢 текст</span>.
+  // title — комментарий менеджера (если есть), виден по долгому тапу/наведению.
+  function buildLeadBadge(status, comment) {
+    var meta = leadStatusMeta(status);
+    var span = document.createElement("span");
+    span.className = "lead-badge " + meta.css;
+    setText(span, meta.icon + " " + status);
+    if (comment) {
+      span.title = comment;
+    }
+    return span;
+  }
+
   // Одна строка визитки: "Имя — Компания · телефон · email".
   function cardLine(card) {
     var name = (card.name || "").trim();
@@ -318,16 +361,32 @@
     setText(meta, multi ? (job.source_event || "") : buildMeta(job));
     body.appendChild(meta);
 
-    // Если визиток несколько — перечислим каждую отдельной строкой.
+    // Если визиток несколько — перечислим каждую отдельной строкой,
+    // с бейджем статуса лида, если он уже проставлен в таблице.
     if (multi) {
       var ul = document.createElement("ul");
       ul.className = "job-cards";
       for (var k = 0; k < cards.length; k++) {
         var liCard = document.createElement("li");
-        setText(liCard, cardLine(cards[k]));
+        var textSpan = document.createElement("span");
+        setText(textSpan, cardLine(cards[k]));
+        liCard.appendChild(textSpan);
+        var statusMulti = leadStatusFor(job, k);
+        if (statusMulti) {
+          liCard.appendChild(buildLeadBadge(statusMulti, leadCommentFor(job, k)));
+        }
         ul.appendChild(liCard);
       }
       body.appendChild(ul);
+    } else {
+      // Одна визитка на фото — бейдж статуса отдельной строкой под meta.
+      var statusSingle = leadStatusFor(job, 0);
+      if (statusSingle) {
+        var leadRow = document.createElement("div");
+        leadRow.className = "job-lead-row";
+        leadRow.appendChild(buildLeadBadge(statusSingle, leadCommentFor(job, 0)));
+        body.appendChild(leadRow);
+      }
     }
 
     li.appendChild(body);

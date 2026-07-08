@@ -216,15 +216,38 @@
       gap: 3px;
     }
     .job-cards li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
       font-size: 13px;
       color: var(--text);
       padding: 4px 8px;
       background: rgba(127, 127, 127, 0.10);
       border-radius: 6px;
+    }
+    .job-cards li > span:first-child {
+      min-width: 0;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
     }
+
+    /* --- Статус лида (из колонки Google Sheets, заполняет офис-менеджер) --- */
+    .job-lead-row { margin-top: 6px; }
+    .lead-badge {
+      display: inline-block;
+      flex: 0 0 auto;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 3px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .lead-progress { background: rgba(217, 119, 6, 0.18); color: var(--warn); }
+    .lead-won      { background: rgba(34, 160, 107, 0.18); color: var(--ok); }
+    .lead-lost     { background: rgba(220, 72, 72, 0.18); color: var(--err); }
+    .lead-other    { background: rgba(59, 130, 246, 0.18); color: var(--accent); }
     .job-status {
       flex: 0 0 auto;
       font-size: 13px;
