@@ -1,0 +1,26 @@
+# --- Виртуальное окружение ---
+venv/
+.venv/
+
+# --- Python кэш ---
+__pycache__/
+*.pyc
+*.pyo
+
+# --- Локальная конфигурация и секреты (НЕ коммитить) ---
+config.yaml
+service_account.json
+
+# --- Данные времени выполнения ---
+data/photos/
+
+# --- Сборка PyInstaller / инсталлятор ---
+build/
+dist/
+*.spec.bak
+_entry.py
+Output/
+
+# --- Прочее ---
+*.log
+.DS_Store

@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <!-- Эту страницу открывают НА ПК, поэтому viewport обычный, десктопный -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a1d21">
+  <title>Подключение телефона — Сканер визиток</title>
+  <style>
+    /* --- Тёмная нейтральная тема (палитра из контракта проекта) --- */
+    :root {
+      --bg: #1a1d21;
+      --surface: #24282e;
+      --surface-2: #2d323a;
+      --border: #3a4049;
+      --text: #e8eaed;
+      --text-muted: #9aa0a6;
+      --accent: #3b82f6;
+      --err: #dc4848;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 18px;
+      line-height: 1.5;
+    }
+
+    .wrap {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 40px 24px 64px;
+    }
+
+    h1 {
+      font-size: 34px;
+      font-weight: 700;
+      margin: 0 0 8px;
+      text-align: center;
+    }
+
+    .subtitle {
+      text-align: center;
+      color: var(--text-muted);
+      margin: 0 0 36px;
+      font-size: 18px;
+    }
+
+    /* --- Карточка шага --- */
+    .step {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin: 0 0 20px;
+    }
+
+    .step-head {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    .step-num {
+      flex: 0 0 auto;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 20px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .step-title {
+      font-size: 21px;
+      font-weight: 600;
+    }
+
+    .step-body { font-size: 18px; }
+
+    /* --- Адреса сервера (крупно, моноширинно, можно скопировать) --- */
+    .addr-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      margin-top: 6px;
+    }
+
+    .addr {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 18px;
+    }
+
+    .addr-label {
+      font-size: 14px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .addr-value {
+      font-family: "SF Mono", ui-monospace, "Cascadia Code", Menlo, Consolas, monospace;
+      font-size: 26px;
+      font-weight: 600;
+      color: var(--text);
+      word-break: break-all;
+      user-select: all;
+    }
+
+    /* --- QR --- */
+    .qr-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+    }
+
+    .qr-frame {
+      background: #ffffff;
+      padding: 16px;
+      border-radius: 16px;
+      line-height: 0;
+    }
+
+    .qr-frame img {
+      display: block;
+      width: 280px;
+      height: 280px;
+      max-width: 100%;
+    }
+
+    .qr-caption {
+      color: var(--text-muted);
+      font-size: 18px;
+    }
+
+    /* --- Подсказка про установку PWA --- */
+    .hint {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--accent);
+      border-radius: 12px;
+      padding: 18px 20px;
+      color: var(--text);
+      font-size: 17px;
+    }
+
+    /* --- Статус соединения --- */
+    .status {
+      text-align: center;
+      margin-top: 8px;
+      font-size: 16px;
+      color: var(--text-muted);
+      min-height: 22px;
+    }
+
+    .status.error { color: var(--err); }
+
+    .placeholder { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Подключение телефона</h1>
+    <p class="subtitle">Подключите смартфон, чтобы фотографировать визитки и отправлять их на этот компьютер.</p>
+
+    <!-- Шаг 1 -->
+    <section class="step">
+      <div class="step-head">
+        <div class="step-num">1</div>
+        <div class="step-title">Одна сеть Wi-Fi</div>
+      </div>
+      <div class="step-body">
+        Подключите телефон к той же Wi-Fi сети, что и этот компьютер.
+      </div>
+    </section>
+
+    <!-- Шаг 2 -->
+    <section class="step">
+      <div class="step-head">
+        <div class="step-num">2</div>
+        <div class="step-title">Откройте адрес сервера в браузере телефона</div>
+      </div>
+      <div class="step-body">
+        <div class="addr-list">
+          <div class="addr">
+            <span class="addr-label">Удобный адрес</span>
+            <span class="addr-value" id="addr-hostname"><span class="placeholder">загрузка…</span></span>
+          </div>
+          <div class="addr">
+            <span class="addr-label">Запасной адрес (если первый не открывается)</span>
+            <span class="addr-value" id="addr-ip"><span class="placeholder">загрузка…</span></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Шаг 3 -->
+    <section class="step">
+      <div class="step-head">
+        <div class="step-num">3</div>
+        <div class="step-title">Или отсканируйте QR-код</div>
+      </div>
+      <div class="step-body qr-box">
+        <div class="qr-frame">
+          <img src="/qr.png" alt="QR для подключения">
+        </div>
+        <div class="qr-caption">Отсканируйте камерой телефона</div>
+      </div>
+    </section>
+
+    <!-- Подсказка про установку -->
+    <div class="hint">
+      На телефоне в браузере откройте меню → «Добавить на главный экран» — приложение установится как обычное.
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    // Подставляем актуальные адреса сервера. IP в локальной сети может меняться,
+    // поэтому периодически перезапрашиваем /api/server-info.
+    const elHostname = document.getElementById('addr-hostname');
+    const elIp = document.getElementById('addr-ip');
+    const elStatus = document.getElementById('status');
+
+    function setText(el, text) {
+      el.textContent = text;
+    }
+
+    async function refreshServerInfo() {
+      try {
+        const resp = await fetch('/api/server-info', { cache: 'no-store' });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const info = await resp.json();
+
+        const port = info.port;
+        const hostname = info.hostname || 'cardscan.local';
+        const lanIp = info.lan_ip;
+
+        // Удобный адрес через mDNS-имя (cardscan.local)
+        setText(elHostname, 'http://' + hostname + ':' + port);
+
+        // Запасной адрес по IP. Если url пришёл готовым — используем его,
+        // иначе собираем из lan_ip и порта.
+        if (lanIp) {
+          setText(elIp, 'http://' + lanIp + ':' + port);
+        } else if (info.url) {
+          setText(elIp, info.url);
+        } else {
+          setText(elIp, '—');
+        }
+
+        elStatus.classList.remove('error');
+        setText(elStatus, 'Сервер на связи');
+      } catch (e) {
+        elStatus.classList.add('error');
+        setText(elStatus, 'Сервер недоступен');
+      }
+    }
+
+    refreshServerInfo();
+    setInterval(refreshServerInfo, 5000);
+  </script>
+</body>
+</html>

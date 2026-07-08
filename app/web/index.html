@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <!-- Мобильный viewport: страница рассчитана на телефон, без масштабирования -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1d21">
+  <title>Сканер визиток</title>
+
+  <!-- PWA: установка как приложение на телефон -->
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Сканер">
+  <style>
+    /* --- Тёмная нейтральная тема, крупные элементы под палец --- */
+    :root {
+      --bg: #1a1d21;
+      --surface: #24282e;
+      --surface-2: #2d323a;
+      --border: #3a4049;
+      --text: #e8eaed;
+      --text-muted: #9aa0a6;
+      --accent: #3b82f6;
+      --ok: #22a06b;
+      --warn: #d97706;
+      --err: #dc4848;
+      --radius: 14px;
+    }
+
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px;
+      line-height: 1.4;
+    }
+
+    .app {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 0 16px env(safe-area-inset-bottom, 16px);
+    }
+
+    /* --- Шапка --- */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: var(--bg);
+      padding: 18px 16px 12px;
+      margin: 0 -16px 8px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    header h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+    .header-link {
+      flex: 0 0 auto;
+      font-size: 15px;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+    .header-link:active { transform: scale(0.97); }
+
+    /* --- Секции --- */
+    section { margin: 16px 0; }
+    .label {
+      display: block;
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-bottom: 6px;
+    }
+    .hint {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 6px 2px 0;
+    }
+
+    /* --- Поле сессии --- */
+    input[type="text"] {
+      width: 100%;
+      padding: 14px 16px;
+      font-size: 17px;
+      color: var(--text);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      outline: none;
+    }
+    input[type="text"]:focus { border-color: var(--accent); }
+    input[type="text"]::placeholder { color: var(--text-muted); }
+
+    /* --- Кнопки (крупные, под палец) --- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 18px 16px;
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text);
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      user-select: none;
+      text-align: center;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+
+    .btn-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    /* --- Зона съёмки --- */
+    /* Скрываем нативные file-input, кликаем по ним через <label> */
+    #cameraInput, #galleryInput {
+      position: absolute;
+      width: 1px; height: 1px;
+      padding: 0; margin: -1px;
+      overflow: hidden; clip: rect(0 0 0 0);
+      border: 0;
+    }
+    .camera-btn { font-size: 19px; padding: 22px 16px; }
+    .gallery-btn { margin-top: 10px; }
+
+    #preview {
+      display: block;
+      width: 100%;
+      max-height: 60vh;
+      object-fit: contain;
+      margin-top: 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: #000;
+    }
+
+    .hidden { display: none !important; }
+
+    /* --- Лента обработки --- */
+    .feed-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 24px 0 8px;
+    }
+    #feed { list-style: none; margin: 0; padding: 0; }
+    #feed:empty::after {
+      content: "Пока пусто — сфотографируйте первую визитку.";
+      display: block;
+      color: var(--text-muted);
+      font-size: 14px;
+      padding: 8px 2px;
+    }
+
+    /* Карточка джоба (разметку наполняет app.js) */
+    .job {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      margin-bottom: 10px;
+    }
+    .job-thumb {
+      width: 48px; height: 48px;
+      border-radius: 10px;
+      object-fit: cover;
+      background: var(--surface-2);
+      flex: 0 0 auto;
+    }
+    .job-body { flex: 1 1 auto; min-width: 0; }
+    .job-title {
+      font-size: 16px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .job-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .job-cards {
+      list-style: none;
+      margin: 6px 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .job-cards li {
+      font-size: 13px;
+      color: var(--text);
+      padding: 4px 8px;
+      background: rgba(127, 127, 127, 0.10);
+      border-radius: 6px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .job-status {
+      flex: 0 0 auto;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: var(--surface-2);
+      color: var(--text-muted);
+    }
+    .job-status.queued    { color: var(--text-muted); }
+    .job-status.uploading { color: var(--accent); }
+    .job-status.processing { color: var(--warn); }
+    .job-status.done   { color: var(--ok); }
+    .job-status.failed { color: var(--err); }
+  </style>
+</head>
+<body>
+  <div class="app">
+
+    <!-- 1) Шапка -->
+    <header>
+      <h1>Сканер визиток</h1>
+      <a class="header-link" href="/setup">⚙ Настройки</a>
+    </header>
+
+    <!-- 2) Поле сессии (источник подставляется во все визитки) -->
+    <section>
+      <label class="label" for="sourceEvent">Выставка / источник</label>
+      <input type="text" id="sourceEvent" autocomplete="off"
+             placeholder="Например: Иннопром 2026">
+      <p class="hint">Подставляется во все визитки этой сессии. Сохраняется на устройстве.</p>
+    </section>
+
+    <!-- 3) Зона съёмки -->
+    <section>
+      <!-- Нативный ввод фото с камеры; оформлен как большая кнопка через label -->
+      <input type="file" accept="image/*" capture="environment" id="cameraInput">
+      <label class="btn btn-primary camera-btn" for="cameraInput">
+        📷 Сфотографировать визитку
+      </label>
+
+      <!-- Загрузка готового фото из галереи/файлов (без принудительной камеры) -->
+      <input type="file" accept="image/*" id="galleryInput">
+      <label class="btn gallery-btn" for="galleryInput">
+        🖼 Выбрать из галереи
+      </label>
+
+      <!-- Превью и кнопки подтверждения скрыты до съёмки -->
+      <img id="preview" class="hidden" alt="Превью визитки">
+      <div class="btn-row hidden" id="actionRow">
+        <button type="button" class="btn btn-ok" id="confirmBtn">✅ Ок, в работу</button>
+        <button type="button" class="btn" id="retakeBtn">🔄 Переснять</button>
+      </div>
+    </section>
+
+    <!-- 4) Лента обработки -->
+    <section>
+      <div class="feed-title">Обработка</div>
+      <ul id="feed"></ul>
+    </section>
+
+    <!-- Подключение телефона (открыть на ПК) -->
+    <section>
+      <a class="hint" href="/connect" style="color: var(--accent); text-decoration: none;">
+        📱 Подключить телефон / QR-код
+      </a>
+    </section>
+
+  </div>
+
+  <!-- Вся логика — в app.js -->
+  <script src="/static/app.js"></script>
+</body>
+</html>

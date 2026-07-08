@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1d21">
+  <title>Настройки — Сканер визиток</title>
+  <style>
+    :root {
+      --bg: #1a1d21; --surface: #24282e; --surface-2: #2d323a; --border: #3a4049;
+      --text: #e8eaed; --text-muted: #9aa0a6; --accent: #3b82f6;
+      --ok: #22a06b; --warn: #d97706; --err: #dc4848; --radius: 14px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px; line-height: 1.45;
+    }
+    .app { max-width: 680px; margin: 0 auto; padding: 0 16px 40px; }
+    header {
+      position: sticky; top: 0; z-index: 10; background: var(--bg);
+      padding: 18px 16px 12px; margin: 0 -16px 8px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    header h1 { margin: 0; font-size: 22px; font-weight: 700; }
+    .back { color: var(--text-muted); text-decoration: none; font-size: 15px;
+      padding: 6px 10px; border: 1px solid var(--border); border-radius: 999px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 16px; margin: 16px 0;
+    }
+    .card h2 { margin: 0 0 4px; font-size: 18px; }
+    .card .sub { color: var(--text-muted); font-size: 14px; margin: 0 0 14px; }
+
+    .step { margin: 16px 0; }
+    .step-num {
+      display: inline-block; width: 24px; height: 24px; line-height: 24px;
+      text-align: center; border-radius: 50%; background: var(--surface-2);
+      color: var(--text-muted); font-size: 13px; font-weight: 700; margin-right: 8px;
+    }
+    label.lbl { display: block; font-size: 14px; color: var(--text-muted); margin: 12px 0 6px; }
+
+    input[type="text"], input[type="password"], select, textarea {
+      width: 100%; padding: 13px 14px; font-size: 16px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px; outline: none;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    textarea { resize: vertical; min-height: 88px; font-family: inherit; }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 15px 16px; font-size: 16px; font-weight: 600; color: var(--text);
+      background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+      cursor: pointer; user-select: none; margin-top: 12px;
+    }
+    .btn:active { transform: scale(0.99); }
+    .btn[disabled] { opacity: 0.5; cursor: default; }
+    .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+    .file-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    input[type="file"] { display: none; }
+    .file-label {
+      flex: 1 1 auto; padding: 13px 14px; border: 1px dashed var(--border);
+      border-radius: 12px; color: var(--text-muted); text-align: center; cursor: pointer;
+    }
+
+    .email-box {
+      margin-top: 12px; padding: 12px 14px; border-radius: 12px;
+      background: rgba(59,130,246,0.12); border: 1px solid var(--accent);
+    }
+    .email-box .addr { font-weight: 700; word-break: break-all; }
+    .email-box .copy { margin-top: 8px; }
+
+    .switch-row { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+    .switch-row input { width: auto; }
+
+    .status {
+      margin-top: 14px; padding: 12px 14px; border-radius: 12px; font-size: 15px;
+      background: var(--surface-2); border: 1px solid var(--border);
+    }
+    .status.ok { border-color: var(--ok); color: #b8f0d6; background: rgba(34,160,107,0.12); }
+    .status.err { border-color: var(--err); color: #ffc9c9; background: rgba(220,72,72,0.12); }
+    .status.warn { border-color: var(--warn); color: #fde0b0; background: rgba(217,119,6,0.12); }
+    .muted { color: var(--text-muted); font-size: 13px; }
+    a { color: var(--accent); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>Настройки</h1>
+      <a class="back" href="/">← К съёмке</a>
+    </header>
+
+    <!-- ====================== GOOGLE ТАБЛИЦА ====================== -->
+    <div class="card">
+      <h2>📊 Google Таблица</h2>
+      <p class="sub">Куда агент будет записывать распознанные визитки.</p>
+
+      <div id="gReqWarn" class="status warn hidden">
+        Библиотеки для Google Sheets не установлены на сервере. Выполните
+        <code>pip install gspread google-auth</code> и перезапустите приложение.
+      </div>
+
+      <!-- Шаг 1: ключ сервисного аккаунта -->
+      <div class="step">
+        <div><span class="step-num">1</span><b>Ключ доступа (сервисный аккаунт)</b></div>
+        <p class="muted">Файл <code>service_account.json</code> из Google Cloud. Как получить — см.
+          <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">инструкцию в README</a>.</p>
+        <div class="file-row">
+          <label class="file-label" for="credFile" id="credFileLabel">Выбрать JSON-файл ключа…</label>
+          <input type="file" id="credFile" accept="application/json,.json">
+        </div>
+        <button class="btn" id="credUploadBtn" disabled>Загрузить ключ</button>
+
+        <!-- Email сервисного аккаунта: ему нужно открыть доступ к таблице -->
+        <div class="email-box hidden" id="emailBox">
+          <div class="muted">⚠️ Откройте доступ <b>«Редактор»</b> к вашей таблице этому адресу:</div>
+          <div class="addr" id="saEmail">—</div>
+          <button class="btn copy" id="copyEmailBtn">📋 Скопировать адрес</button>
+        </div>
+      </div>
+
+      <!-- Шаг 2: ссылка на таблицу -->
+      <div class="step">
+        <div><span class="step-num">2</span><b>Таблица</b></div>
+        <label class="lbl" for="spreadsheet">Ссылка на Google-таблицу или её ID</label>
+        <input type="text" id="spreadsheet" placeholder="https://docs.google.com/spreadsheets/d/...">
+        <label class="lbl" for="worksheet">Название листа</label>
+        <input type="text" id="worksheet" placeholder="Лиды" value="Лиды">
+        <div class="switch-row">
+          <input type="checkbox" id="enabled" checked>
+          <label for="enabled">Записывать визитки в таблицу</label>
+        </div>
+        <button class="btn btn-primary" id="saveGoogleBtn">Сохранить</button>
+      </div>
+
+      <!-- Шаг 3: проверка -->
+      <div class="step">
+        <div><span class="step-num">3</span><b>Проверка</b></div>
+        <button class="btn" id="testBtn">🔌 Проверить подключение</button>
+        <div class="status hidden" id="testStatus"></div>
+      </div>
+    </div>
+
+    <!-- ====================== МЕНЕДЖЕРЫ ====================== -->
+    <div class="card">
+      <h2>👥 Менеджеры отдела продаж</h2>
+      <p class="sub">Список фамилий для выпадающего списка «Ответственный» в таблице.
+        Агент назначение не делает — это для ручного выбора в таблице.</p>
+      <label class="lbl" for="salesReps">По одной фамилии в строке</label>
+      <textarea id="salesReps" placeholder="Иванов&#10;Петров&#10;Сидорова"></textarea>
+      <button class="btn btn-primary" id="saveRepsBtn">Сохранить список</button>
+      <div class="status hidden" id="repsStatus"></div>
+    </div>
+
+    <!-- ====================== РАСПОЗНАВАНИЕ ====================== -->
+    <div class="card">
+      <h2>🧠 Распознавание</h2>
+      <p class="sub">Чем читать визитки: облачный AI (точнее, нужен ключ и интернет)
+        или локально (бесплатно, офлайн).</p>
+      <label class="lbl" for="recognizer">Движок</label>
+      <select id="recognizer"></select>
+      <div id="keyWrap">
+        <label class="lbl" for="apiKey">API-ключ для выбранного облачного провайдера</label>
+        <input type="password" id="apiKey" placeholder="Вставьте ключ (если облачный движок)">
+        <p class="muted">Ключ хранится локально в config.yaml на этом ПК.</p>
+      </div>
+      <button class="btn btn-primary" id="saveRecBtn">Сохранить</button>
+      <div class="status hidden" id="recStatus"></div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    function $(id) { return document.getElementById(id); }
+    function show(el) { el.classList.remove("hidden"); }
+    function hide(el) { el.classList.add("hidden"); }
+    function setStatus(el, text, kind) {
+      el.className = "status " + (kind || "");
+      el.textContent = text;
+      show(el);
+    }
+
+    var selectedCred = null;
+
+    // ---------- Google: загрузка статуса ----------
+    function loadGoogleStatus() {
+      fetch("/api/google/status").then(function (r) { return r.json(); }).then(function (s) {
+        if (!s.gspread_installed) { show($("gReqWarn")); }
+        if (s.spreadsheet_url) { $("spreadsheet").value = s.spreadsheet_url; }
+        else if (s.spreadsheet_id) { $("spreadsheet").value = s.spreadsheet_id; }
+        if (s.worksheet) { $("worksheet").value = s.worksheet; }
+        $("enabled").checked = !!s.enabled;
+        if (s.client_email) {
+          $("saEmail").textContent = s.client_email;
+          show($("emailBox"));
+        }
+        if (s.sales_reps && s.sales_reps.length) {
+          $("salesReps").value = s.sales_reps.join("\n");
+        }
+      }).catch(function () {});
+    }
+
+    // ---------- Google: ключ сервисного аккаунта ----------
+    $("credFile").addEventListener("change", function () {
+      selectedCred = this.files && this.files[0];
+      if (selectedCred) {
+        $("credFileLabel").textContent = selectedCred.name;
+        $("credUploadBtn").disabled = false;
+      }
+    });
+
+    $("credUploadBtn").addEventListener("click", function () {
+      if (!selectedCred) { return; }
+      var fd = new FormData();
+      fd.append("credentials", selectedCred, selectedCred.name);
+      this.disabled = true; this.textContent = "Загрузка…";
+      var btn = this;
+      fetch("/api/google/credentials", { method: "POST", body: fd })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok && res.j.ok) {
+            $("saEmail").textContent = res.j.client_email || "—";
+            show($("emailBox"));
+          } else {
+            window.alert("Ошибка: " + (res.j.detail || res.j.error || "не удалось загрузить ключ"));
+          }
+        })
+        .catch(function (e) { window.alert("Ошибка сети: " + e.message); })
+        .then(function () { btn.disabled = false; btn.textContent = "Загрузить ключ"; });
+    });
+
+    $("copyEmailBtn").addEventListener("click", function () {
+      var email = $("saEmail").textContent;
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(email).then(function () {
+          $("copyEmailBtn").textContent = "✅ Скопировано";
+          setTimeout(function () { $("copyEmailBtn").textContent = "📋 Скопировать адрес"; }, 1500);
+        });
+      }
+    });
+
+    // ---------- Google: сохранить настройки таблицы ----------
+    $("saveGoogleBtn").addEventListener("click", function () {
+      var payload = {
+        spreadsheet: $("spreadsheet").value,
+        worksheet: $("worksheet").value,
+        enabled: $("enabled").checked
+      };
+      var btn = this; btn.disabled = true;
+      fetch("/api/google/config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); }).then(function () {
+        setStatus($("testStatus"), "Сохранено. Теперь проверьте подключение.", "ok");
+      }).catch(function (e) {
+        setStatus($("testStatus"), "Ошибка сохранения: " + e.message, "err");
+      }).then(function () { btn.disabled = false; });
+    });
+
+    // ---------- Google: проверка подключения ----------
+    $("testBtn").addEventListener("click", function () {
+      var btn = this; btn.disabled = true; btn.textContent = "Проверяем…";
+      setStatus($("testStatus"), "Подключаемся к таблице…", "warn");
+      fetch("/api/google/test", { method: "POST" })
+        .then(function (r) { return r.json(); })
+        .then(function (res) {
+          if (res.ok) {
+            setStatus($("testStatus"),
+              "✅ Подключено: «" + res.spreadsheet_title + "», лист «" + res.worksheet +
+              "». Заголовки и список ответственных готовы.", "ok");
+          } else {
+            setStatus($("testStatus"), "❌ " + (res.error || "Не удалось подключиться"), "err");
+          }
+        })
+        .catch(function (e) { setStatus($("testStatus"), "Ошибка: " + e.message, "err"); })
+        .then(function () { btn.disabled = false; btn.textContent = "🔌 Проверить подключение"; });
+    });
+
+    // ---------- Менеджеры ----------
+    $("saveRepsBtn").addEventListener("click", function () {
+      var reps = $("salesReps").value.split("\n").map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length; });
+      var btn = this; btn.disabled = true;
+      fetch("/api/google/config", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sales_reps: reps })
+      }).then(function (r) { return r.json(); }).then(function () {
+        setStatus($("repsStatus"), "Сохранено: " + reps.length + " фамилий.", "ok");
+      }).catch(function (e) {
+        setStatus($("repsStatus"), "Ошибка: " + e.message, "err");
+      }).then(function () { btn.disabled = false; });
+    });
+
+    // ---------- Распознавание ----------
+    var RECOGNIZER_LABELS = {
+      "cloud:gemini": "Облако — Google Gemini",
+      "cloud:openai": "Облако — OpenAI (GPT)",
+      "cloud:claude": "Облако — Anthropic (Claude)",
+      "local-ocr": "Локально — OCR (Tesseract, офлайн)",
+      "local-vision": "Локально — vision-модель (Ollama, офлайн)"
+    };
+    function providerKeyPath(rec) {
+      if (rec === "cloud:gemini") { return "cloud.gemini.api_key"; }
+      if (rec === "cloud:openai") { return "cloud.openai.api_key"; }
+      if (rec === "cloud:claude") { return "cloud.claude.api_key"; }
+      return null;
+    }
+    function updateKeyVisibility() {
+      var rec = $("recognizer").value;
+      $("keyWrap").style.display = providerKeyPath(rec) ? "" : "none";
+    }
+    function loadSettings() {
+      fetch("/settings").then(function (r) { return r.json(); }).then(function (s) {
+        var sel = $("recognizer");
+        sel.innerHTML = "";
+        (s.available_recognizers || []).forEach(function (rec) {
+          var opt = document.createElement("option");
+          opt.value = rec; opt.textContent = RECOGNIZER_LABELS[rec] || rec;
+          if (rec === s.recognizer) { opt.selected = true; }
+          sel.appendChild(opt);
+        });
+        updateKeyVisibility();
+      }).catch(function () {});
+    }
+    $("recognizer").addEventListener("change", updateKeyVisibility);
+
+    $("saveRecBtn").addEventListener("click", function () {
+      var rec = $("recognizer").value;
+      var payload = { recognizer: rec, set: {} };
+      var keyPath = providerKeyPath(rec);
+      var keyVal = $("apiKey").value.trim();
+      if (keyPath && keyVal) { payload.set[keyPath] = keyVal; }
+      var btn = this; btn.disabled = true;
+      fetch("/settings", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then(function (r) { return r.json(); }).then(function () {
+        setStatus($("recStatus"), "Сохранено. Движок: " + (RECOGNIZER_LABELS[rec] || rec), "ok");
+        $("apiKey").value = "";
+      }).catch(function (e) {
+        setStatus($("recStatus"), "Ошибка: " + e.message, "err");
+      }).then(function () { btn.disabled = false; });
+    });
+
+    // ---------- Инициализация ----------
+    loadGoogleStatus();
+    loadSettings();
+  })();
+  </script>
+</body>
+</html>

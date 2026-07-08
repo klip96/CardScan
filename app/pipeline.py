@@ -1,0 +1,211 @@
+"""Асинхронный конвейер обработки визиток.
+
+Ключевой сценарий: сотрудник снимает визитки потоком. Каждое фото мгновенно
+ставится в очередь и обрабатывается в фоне независимо, пока снимается следующее.
+
+Этапы одного джоба:
+    queued -> recognizing -> enriching -> writing -> done | failed
+
+Распознавание/обогащение/запись — блокирующие (сеть/диск), поэтому выполняются
+в пуле потоков через asyncio.to_thread, чтобы не блокировать event loop FastAPI.
+
+Python 3.9-совместимо.
+"""
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+import uuid
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from app.config import Config
+from app.recognizers.base import CardData
+
+logger = logging.getLogger("cardscan.pipeline")
+
+# Допустимые статусы джоба (для справки/валидации UI)
+STATUSES = ("queued", "recognizing", "enriching", "writing", "done", "failed")
+
+
+@dataclass
+class Job:
+    id: str
+    photo_path: Path
+    mime_type: str
+    source_event: str = ""
+    filename: str = ""
+    status: str = "queued"
+    created_at: float = field(default_factory=time.time)
+    # result/sheet_row — первая визитка (обратная совместимость со старым UI);
+    # results/sheet_rows — ВСЕ визитки, найденные на одном фото.
+    result: Optional[Dict[str, Any]] = None
+    results: Optional[List[Dict[str, Any]]] = None
+    error: Optional[str] = None
+    sheet_row: Optional[int] = None
+    sheet_rows: Optional[List[int]] = None
+
+    def to_public(self) -> Dict[str, Any]:
+        """Представление джоба для отдачи в UI."""
+        cards_count = len(self.results) if self.results else (1 if self.result else 0)
+        return {
+            "id": self.id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "source_event": self.source_event,
+            "filename": self.filename,
+            "result": self.result,
+            "results": self.results,
+            "cards_count": cards_count,
+            "error": self.error,
+            "sheet_row": self.sheet_row,
+            "sheet_rows": self.sheet_rows,
+        }
+
+
+class JobManager:
+    """Очередь джобов + фоновый воркер. Создаётся один на приложение."""
+
+    def __init__(self, config: Config):
+        self.config = config
+        self._queue: "asyncio.Queue[str]" = asyncio.Queue()
+        self._jobs: Dict[str, Job] = {}
+        self._order: List[str] = []  # порядок поступления
+        self._worker_task: Optional[asyncio.Task] = None
+
+    # ----- управление жизненным циклом -----
+    def start(self) -> None:
+        if self._worker_task is None or self._worker_task.done():
+            self._worker_task = asyncio.create_task(self._worker_loop())
+            logger.info("Воркер конвейера запущен")
+
+    async def stop(self) -> None:
+        if self._worker_task:
+            self._worker_task.cancel()
+            try:
+                await self._worker_task
+            except asyncio.CancelledError:
+                pass
+            self._worker_task = None
+
+    # ----- API для маршрутов -----
+    def enqueue(self, photo_path: Path, mime_type: str, source_event: str, filename: str) -> str:
+        job_id = uuid.uuid4().hex[:12]
+        job = Job(
+            id=job_id,
+            photo_path=Path(photo_path),
+            mime_type=mime_type,
+            source_event=source_event,
+            filename=filename,
+        )
+        self._jobs[job_id] = job
+        self._order.append(job_id)
+        self._queue.put_nowait(job_id)
+        logger.info("Джоб %s поставлен в очередь (источник=%r)", job_id, source_event)
+        return job_id
+
+    def list_jobs(self, limit: int = 100) -> List[Dict[str, Any]]:
+        # свежие сверху
+        ids = list(reversed(self._order))[:limit]
+        return [self._jobs[i].to_public() for i in ids if i in self._jobs]
+
+    def get_job(self, job_id: str) -> Optional[Job]:
+        return self._jobs.get(job_id)
+
+    # ----- воркер -----
+    async def _worker_loop(self) -> None:
+        while True:
+            job_id = await self._queue.get()
+            job = self._jobs.get(job_id)
+            if job is None:
+                self._queue.task_done()
+                continue
+            try:
+                await self._process(job)
+            except Exception as exc:  # noqa: BLE001 — воркер не должен умирать
+                logger.exception("Джоб %s упал", job_id)
+                job.status = "failed"
+                job.error = str(exc)
+            finally:
+                self._queue.task_done()
+
+    async def _process(self, job: Job) -> None:
+        # читаем байты фото
+        image_bytes = await asyncio.to_thread(job.photo_path.read_bytes)
+
+        # --- шаг 1: распознавание (на фото может быть несколько визиток) ---
+        job.status = "recognizing"
+        cards = await asyncio.to_thread(self._recognize_cards, image_bytes, job.mime_type)
+        if not cards:
+            cards = [CardData(notes="Не распознано ни одной визитки")]
+        for card in cards:
+            card.source_event = job.source_event
+
+        # --- шаг 2: обогащение из интернета (каждая визитка отдельно) ---
+        if self.config.get("enrichment.enabled", True):
+            job.status = "enriching"
+            try:
+                cards = await asyncio.to_thread(self._enrich_all, cards)
+            except Exception as exc:  # обогащение не критично
+                logger.warning("Обогащение джоба %s не удалось: %s", job.id, exc)
+
+        # предварительный результат уже доступен для UI
+        self._set_results(job, cards)
+
+        # --- шаг 3: запись в Google Sheets (по строке на визитку) ---
+        if self.config.get("google_sheets.enabled", True):
+            job.status = "writing"
+            try:
+                photo_ref = self._photo_ref(job)
+                rows = await asyncio.to_thread(self._write_all, cards, photo_ref)
+                job.sheet_rows = rows
+                job.sheet_row = rows[0] if rows else None
+            except Exception as exc:
+                logger.warning("Запись джоба %s в таблицу не удалась: %s", job.id, exc)
+                job.error = "Не записано в таблицу: " + str(exc)
+
+        self._set_results(job, cards)
+        job.status = "done"
+        logger.info("Джоб %s готов (визиток: %d)", job.id, len(cards))
+
+    @staticmethod
+    def _set_results(job: Job, cards: List[CardData]) -> None:
+        """Раскладывает список визиток в поля джоба (results + первая в result)."""
+        dicts = [c.to_dict() for c in cards]
+        job.results = dicts
+        job.result = dicts[0] if dicts else None
+
+    # ----- блокирующие операции (выполняются в потоке) -----
+    def _recognize_cards(self, image_bytes: bytes, mime_type: str) -> List[CardData]:
+        from app.recognizers import get_recognizer  # ленивый импорт
+
+        recognizer = get_recognizer(self.config)
+        cards = recognizer.extract_cards(image_bytes, mime_type=mime_type)
+        return list(cards) if cards else []
+
+    def _enrich_all(self, cards: List[CardData]) -> List[CardData]:
+        from app.enrich import enrich  # ленивый импорт
+
+        out: List[CardData] = []
+        for card in cards:
+            try:
+                out.append(enrich(card, self.config))
+            except Exception as exc:  # noqa: BLE001 — обогащение не критично
+                logger.warning("Обогащение визитки не удалось: %s", exc)
+                out.append(card)
+        return out
+
+    def _write_all(self, cards: List[CardData], photo_ref: str) -> List[int]:
+        from app.sheets import SheetsWriter  # ленивый импорт
+
+        writer = SheetsWriter(self.config)
+        rows: List[int] = []
+        for card in cards:
+            rows.append(writer.append_card(card, photo_ref=photo_ref))
+        return rows
+
+    def _photo_ref(self, job: Job) -> str:
+        # локальная ссылка на сохранённый снимок (доступна с того же ПК/сети)
+        return "/photos/" + job.photo_path.name

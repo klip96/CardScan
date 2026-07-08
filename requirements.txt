@@ -1,0 +1,33 @@
+# --- Ядро (нужно всегда) ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20        # приём файлов через POST /upload
+PyYAML==6.0.2
+Pillow==11.1.0                  # подготовка/сжатие изображений
+httpx==0.28.1                   # http-запросы (Ollama, веб-поиск)
+
+# --- Автопоиск ПК с телефона (mDNS) + QR для подключения ---
+zeroconf==0.136.2               # публикация сервера в локальной сети как cardscan.local
+qrcode==8.0                     # генерация QR-кода со ссылкой на сервер (использует Pillow)
+
+# --- Google Sheets ---
+gspread==6.1.4
+google-auth==2.37.0
+
+# --- Обогащение из интернета ---
+duckduckgo-search==7.2.1
+
+# --- Облачные распознаватели (ставьте те, что используете) ---
+google-genai==0.8.0             # cloud:gemini
+openai==1.59.6                  # cloud:openai
+anthropic==0.42.0               # cloud:claude
+
+# --- Локальный OCR (Уровень A). Tesseract по умолчанию: лёгкий, без GPU.
+#     Требует системный бинарь tesseract-ocr + языковые пакеты (rus, eng).
+pytesseract==0.3.13
+# PaddleOCR — точнее, но тяжелее; раскомментируйте при необходимости:
+# paddleocr==2.9.1
+# paddlepaddle==2.6.2
+
+# --- Локальная vision-модель (Уровень B) ---
+# Работает через HTTP к Ollama (см. ollama_setup/), отдельный python-пакет не нужен.

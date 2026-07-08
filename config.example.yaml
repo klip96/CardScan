@@ -1,0 +1,63 @@
+# =====================================================================
+#  Конфигурация агента оцифровки визиток
+#  Скопируйте этот файл в config.yaml и заполните под себя.
+# =====================================================================
+
+# Движок распознавания визиток. Один из:
+#   cloud:gemini   — Google Gemini (точно, дёшево, нужен api_key + интернет)
+#   cloud:openai   — OpenAI GPT (точно, нужен api_key + интернет)
+#   cloud:claude   — Anthropic Claude (точно, нужен api_key + интернет)
+#   local-ocr      — локальный OCR (Tesseract), офлайн, бесплатно, легче для ПК
+#   local-vision   — vision-модель через Ollama (локальная офлайн ИЛИ облачная qwen3-vl)
+recognizer: "local-vision"
+
+cloud:
+  gemini:
+    api_key: ""                 # https://aistudio.google.com/apikey
+    model: "gemini-2.0-flash"
+  openai:
+    api_key: ""                 # https://platform.openai.com/api-keys
+    model: "gpt-4o"
+  claude:
+    api_key: ""                 # https://console.anthropic.com/
+    model: "claude-sonnet-4-6"
+
+local:
+  ocr:
+    engine: "tesseract"         # tesseract | paddleocr
+    lang: "rus+eng"
+  vision:
+    ollama_host: "http://localhost:11434"
+    # Локальные: moondream (лёгкая, слабая) | qwen2.5vl:3b | gemma3:4b
+    # Облачные Ollama (нужен `ollama signin`): qwen3-vl:235b-cloud — точнее и быстрее
+    model: "qwen3-vl:235b-cloud"
+    timeout_sec: 240            # таймаут запроса к Ollama (сек); медленные локальные модели — увеличьте
+    max_cards: 0               # 0 = без ограничения; максимум визиток с одного фото
+
+enrichment:
+  enabled: true
+  llm: "auto"                   # auto | cloud:gemini | cloud:openai | cloud:claude
+  search: "duckduckgo"
+  max_results: 5
+
+google_sheets:
+  enabled: true
+  credentials_file: "service_account.json"   # JSON-ключ сервисного аккаунта
+  spreadsheet_id: ""                          # ID таблицы из её URL
+  worksheet: "Лиды"
+
+# Список менеджеров отдела продаж.
+# Агент НЕ назначает ответственного автоматически — оставляет колонку пустой.
+# Этот список используется как выпадающий список (data-validation) в самой
+# Google-таблице, чтобы руководитель назначал ответственного в один клик.
+sales_reps:
+  - "Иванов"
+  - "Петров"
+  - "Сидорова"
+
+server:
+  host: "0.0.0.0"               # 0.0.0.0 = доступно с телефона в той же сети
+  port: 8000
+
+storage:
+  photos_dir: "data/photos"     # куда сохраняются снимки визиток
