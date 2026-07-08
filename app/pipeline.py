@@ -52,6 +52,10 @@ class Job:
     # в таблице и подтягиваются обратно через JobManager.refresh_lead_statuses().
     lead_statuses: Optional[List[str]] = None
     lead_comments: Optional[List[str]] = None
+    # Кто снял визитку (логин + должность из аккаунта, не из тела запроса) —
+    # пишется в таблицу отдельными колонками "Сотрудник"/"Должность сотрудника".
+    scanned_by: str = ""
+    scanned_by_position: str = ""
 
     def to_public(self) -> Dict[str, Any]:
         """Представление джоба для отдачи в UI."""
@@ -70,6 +74,8 @@ class Job:
             "sheet_rows": self.sheet_rows,
             "lead_statuses": self.lead_statuses,
             "lead_comments": self.lead_comments,
+            "scanned_by": self.scanned_by,
+            "scanned_by_position": self.scanned_by_position,
         }
 
 
@@ -100,7 +106,15 @@ class JobManager:
             self._worker_task = None
 
     # ----- API для маршрутов -----
-    def enqueue(self, photo_path: Path, mime_type: str, source_event: str, filename: str) -> str:
+    def enqueue(
+        self,
+        photo_path: Path,
+        mime_type: str,
+        source_event: str,
+        filename: str,
+        scanned_by: str = "",
+        scanned_by_position: str = "",
+    ) -> str:
         job_id = uuid.uuid4().hex[:12]
         job = Job(
             id=job_id,
@@ -108,6 +122,8 @@ class JobManager:
             mime_type=mime_type,
             source_event=source_event,
             filename=filename,
+            scanned_by=scanned_by,
+            scanned_by_position=scanned_by_position,
         )
         self._jobs[job_id] = job
         self._order.append(job_id)
@@ -203,7 +219,9 @@ class JobManager:
             job.status = "writing"
             try:
                 photo_ref = self._photo_ref(job)
-                rows = await asyncio.to_thread(self._write_all, cards, photo_ref)
+                rows = await asyncio.to_thread(
+                    self._write_all, cards, photo_ref, job.scanned_by, job.scanned_by_position
+                )
                 job.sheet_rows = rows
                 job.sheet_row = rows[0] if rows else None
             except Exception as exc:
@@ -225,9 +243,26 @@ class JobManager:
     def _recognize_cards(self, image_bytes: bytes, mime_type: str) -> List[CardData]:
         from app.recognizers import get_recognizer  # ленивый импорт
 
-        recognizer = get_recognizer(self.config)
-        cards = recognizer.extract_cards(image_bytes, mime_type=mime_type)
-        return list(cards) if cards else []
+        primary_key = self.config.recognizer
+        recognizer = get_recognizer(self.config, engine=primary_key)
+        cards = list(recognizer.extract_cards(image_bytes, mime_type=mime_type) or [])
+
+        fallback_key = str(self.config.get("recognizer_fallback", "") or "").strip()
+        if fallback_key and fallback_key != primary_key and all(c.is_empty() for c in cards):
+            logger.info("Основной движок %s пуст, пробуем резервный %s", primary_key, fallback_key)
+            try:
+                fb_recognizer = get_recognizer(self.config, engine=fallback_key)
+                fb_cards = list(fb_recognizer.extract_cards(image_bytes, mime_type=mime_type) or [])
+            except Exception as exc:  # noqa: BLE001 — резерв не должен ронять джоб
+                logger.warning("Резервный движок %s не сработал: %s", fallback_key, exc)
+                fb_cards = []
+            if fb_cards and not all(c.is_empty() for c in fb_cards):
+                for c in fb_cards:
+                    tag = "engine: {} (резерв)".format(fallback_key)
+                    c.notes = (c.notes + " | " + tag).strip(" |") if c.notes else tag
+                return fb_cards
+
+        return cards
 
     def _enrich_all(self, cards: List[CardData]) -> List[CardData]:
         from app.enrich import enrich  # ленивый импорт
@@ -241,13 +276,22 @@ class JobManager:
                 out.append(card)
         return out
 
-    def _write_all(self, cards: List[CardData], photo_ref: str) -> List[int]:
+    def _write_all(
+        self, cards: List[CardData], photo_ref: str, scanned_by: str = "", scanned_by_position: str = ""
+    ) -> List[int]:
         from app.sheets import SheetsWriter  # ленивый импорт
 
         writer = SheetsWriter(self.config)
         rows: List[int] = []
         for card in cards:
-            rows.append(writer.append_card(card, photo_ref=photo_ref))
+            rows.append(
+                writer.append_card(
+                    card,
+                    photo_ref=photo_ref,
+                    scanned_by=scanned_by,
+                    scanned_by_position=scanned_by_position,
+                )
+            )
         return rows
 
     def _photo_ref(self, job: Job) -> str:

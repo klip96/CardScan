@@ -9,7 +9,7 @@ openai, anthropic, ollama) подтягиваются только для выб
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from .base import CardData, Recognizer
 
@@ -19,8 +19,14 @@ if TYPE_CHECKING:  # только для подсказок типов, без �
 __all__ = ["CardData", "Recognizer", "get_recognizer"]
 
 
-def get_recognizer(config: "Config") -> Recognizer:
-    key = (config.recognizer or "cloud:gemini").strip().lower()
+def get_recognizer(config: "Config", engine: Optional[str] = None) -> Recognizer:
+    """Создаёт распознаватель по ключу движка.
+
+    engine, если задан, переопределяет config.recognizer — так конвейер
+    может запросить конкретный (например, резервный) движок отдельно
+    от того, что выбран основным в настройках.
+    """
+    key = (engine or config.recognizer or "cloud:gemini").strip().lower()
 
     if key == "cloud:gemini":
         from .gemini import GeminiRecognizer

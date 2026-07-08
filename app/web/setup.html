@@ -86,9 +86,27 @@
     .muted { color: var(--text-muted); font-size: 13px; }
     a { color: var(--accent); }
     .hidden { display: none !important; }
+
+    /* --- Пользователи --- */
+    .user-row {
+      display: flex; align-items: center; gap: 10px; padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+    .user-row:last-child { border-bottom: none; }
+    .user-row .who { flex: 1 1 auto; min-width: 0; }
+    .user-row .uname { font-weight: 600; }
+    .user-row .upos { font-size: 13px; color: var(--text-muted); }
+    .badge-admin {
+      flex: 0 0 auto; font-size: 12px; font-weight: 700; padding: 2px 8px;
+      border-radius: 999px; background: rgba(59,130,246,0.18); color: var(--accent);
+    }
+    .user-row .del {
+      flex: 0 0 auto; background: none; border: 1px solid var(--border); color: var(--err);
+      border-radius: 10px; padding: 6px 10px; cursor: pointer; font-size: 14px;
+    }
   </style>
 </head>
-<body>
+<body style="visibility: hidden;">
   <div class="app">
     <header>
       <h1>Настройки</h1>
@@ -162,15 +180,47 @@
       <h2>🧠 Распознавание</h2>
       <p class="sub">Чем читать визитки: облачный AI (точнее, нужен ключ и интернет)
         или локально (бесплатно, офлайн).</p>
-      <label class="lbl" for="recognizer">Движок</label>
+      <label class="lbl" for="recognizer">Основной движок</label>
       <select id="recognizer"></select>
       <div id="keyWrap">
         <label class="lbl" for="apiKey">API-ключ для выбранного облачного провайдера</label>
         <input type="password" id="apiKey" placeholder="Вставьте ключ (если облачный движок)">
         <p class="muted">Ключ хранится локально в config.yaml на этом ПК.</p>
       </div>
+
+      <label class="lbl" for="recognizerFallback">Резервный движок (если основной не распознал визитку)</label>
+      <select id="recognizerFallback"></select>
+      <div id="fallbackKeyWrap">
+        <label class="lbl" for="fallbackApiKey">API-ключ для резервного облачного провайдера</label>
+        <input type="password" id="fallbackApiKey" placeholder="Вставьте ключ (если облачный движок)">
+      </div>
+      <p class="muted">Например: основной — локальная модель (бесплатно, офлайн),
+        резервный — облачный (если локальная недоступна или не справилась).</p>
+
       <button class="btn btn-primary" id="saveRecBtn">Сохранить</button>
       <div class="status hidden" id="recStatus"></div>
+    </div>
+
+    <!-- ====================== ПОЛЬЗОВАТЕЛИ ====================== -->
+    <div class="card">
+      <h2>👤 Пользователи</h2>
+      <p class="sub">Кто может входить в приложение и сканировать визитки.
+        Логин и должность автоматически попадают в таблицу лидов.</p>
+
+      <div id="usersList"></div>
+
+      <label class="lbl" for="newUsername">Новый пользователь — логин</label>
+      <input type="text" id="newUsername" autocomplete="off">
+      <label class="lbl" for="newPassword">Пароль</label>
+      <input type="password" id="newPassword" autocomplete="new-password">
+      <label class="lbl" for="newPosition">Должность</label>
+      <input type="text" id="newPosition" placeholder="Например: Менеджер по продажам">
+      <div class="switch-row">
+        <input type="checkbox" id="newIsAdmin">
+        <label for="newIsAdmin">Администратор (доступ к настройкам)</label>
+      </div>
+      <button class="btn btn-primary" id="addUserBtn">Добавить пользователя</button>
+      <div class="status hidden" id="usersStatus"></div>
     </div>
   </div>
 
@@ -187,11 +237,26 @@
       show(el);
     }
 
+    // ---------- Авторизация: только вошедший администратор видит эту страницу ----------
+    function getAuth() {
+      try {
+        var raw = window.localStorage.getItem("cardscan.auth");
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+    function authHeaders() {
+      var auth = getAuth();
+      var headers = { "Content-Type": "application/json" };
+      if (auth && auth.token) { headers["Authorization"] = "Bearer " + auth.token; }
+      return headers;
+    }
+
+    var currentUser = null;
     var selectedCred = null;
 
     // ---------- Google: загрузка статуса ----------
     function loadGoogleStatus() {
-      fetch("/api/google/status").then(function (r) { return r.json(); }).then(function (s) {
+      fetch("/api/google/status", { headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (s) {
         if (!s.gspread_installed) { show($("gReqWarn")); }
         if (s.spreadsheet_url) { $("spreadsheet").value = s.spreadsheet_url; }
         else if (s.spreadsheet_id) { $("spreadsheet").value = s.spreadsheet_id; }
@@ -222,7 +287,9 @@
       fd.append("credentials", selectedCred, selectedCred.name);
       this.disabled = true; this.textContent = "Загрузка…";
       var btn = this;
-      fetch("/api/google/credentials", { method: "POST", body: fd })
+      var auth = getAuth();
+      var headers = auth && auth.token ? { "Authorization": "Bearer " + auth.token } : {};
+      fetch("/api/google/credentials", { method: "POST", headers: headers, body: fd })
         .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
         .then(function (res) {
           if (res.ok && res.j.ok) {
@@ -255,7 +322,7 @@
       };
       var btn = this; btn.disabled = true;
       fetch("/api/google/config", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: authHeaders(),
         body: JSON.stringify(payload)
       }).then(function (r) { return r.json(); }).then(function () {
         setStatus($("testStatus"), "Сохранено. Теперь проверьте подключение.", "ok");
@@ -268,7 +335,7 @@
     $("testBtn").addEventListener("click", function () {
       var btn = this; btn.disabled = true; btn.textContent = "Проверяем…";
       setStatus($("testStatus"), "Подключаемся к таблице…", "warn");
-      fetch("/api/google/test", { method: "POST" })
+      fetch("/api/google/test", { method: "POST", headers: authHeaders() })
         .then(function (r) { return r.json(); })
         .then(function (res) {
           if (res.ok) {
@@ -289,7 +356,7 @@
         .filter(function (s) { return s.length; });
       var btn = this; btn.disabled = true;
       fetch("/api/google/config", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: authHeaders(),
         body: JSON.stringify({ sales_reps: reps })
       }).then(function (r) { return r.json(); }).then(function () {
         setStatus($("repsStatus"), "Сохранено: " + reps.length + " фамилий.", "ok");
@@ -315,43 +382,178 @@
     function updateKeyVisibility() {
       var rec = $("recognizer").value;
       $("keyWrap").style.display = providerKeyPath(rec) ? "" : "none";
+      var fb = $("recognizerFallback").value;
+      $("fallbackKeyWrap").style.display = (fb && providerKeyPath(fb)) ? "" : "none";
+    }
+    function fillRecognizerSelect(sel, options, selected, withNone) {
+      sel.innerHTML = "";
+      if (withNone) {
+        var noneOpt = document.createElement("option");
+        noneOpt.value = ""; noneOpt.textContent = "Нет / выключено";
+        if (!selected) { noneOpt.selected = true; }
+        sel.appendChild(noneOpt);
+      }
+      options.forEach(function (rec) {
+        var opt = document.createElement("option");
+        opt.value = rec; opt.textContent = RECOGNIZER_LABELS[rec] || rec;
+        if (rec === selected) { opt.selected = true; }
+        sel.appendChild(opt);
+      });
     }
     function loadSettings() {
-      fetch("/settings").then(function (r) { return r.json(); }).then(function (s) {
-        var sel = $("recognizer");
-        sel.innerHTML = "";
-        (s.available_recognizers || []).forEach(function (rec) {
-          var opt = document.createElement("option");
-          opt.value = rec; opt.textContent = RECOGNIZER_LABELS[rec] || rec;
-          if (rec === s.recognizer) { opt.selected = true; }
-          sel.appendChild(opt);
-        });
+      fetch("/settings", { headers: authHeaders() }).then(function (r) { return r.json(); }).then(function (s) {
+        var recs = s.available_recognizers || [];
+        fillRecognizerSelect($("recognizer"), recs, s.recognizer, false);
+        var fallback = (s.config && s.config.recognizer_fallback) || "";
+        fillRecognizerSelect($("recognizerFallback"), recs, fallback, true);
         updateKeyVisibility();
       }).catch(function () {});
     }
     $("recognizer").addEventListener("change", updateKeyVisibility);
+    $("recognizerFallback").addEventListener("change", updateKeyVisibility);
 
     $("saveRecBtn").addEventListener("click", function () {
       var rec = $("recognizer").value;
-      var payload = { recognizer: rec, set: {} };
+      var fallback = $("recognizerFallback").value;
+      var payload = { recognizer: rec, set: { recognizer_fallback: fallback } };
       var keyPath = providerKeyPath(rec);
       var keyVal = $("apiKey").value.trim();
       if (keyPath && keyVal) { payload.set[keyPath] = keyVal; }
+      var fbKeyPath = fallback ? providerKeyPath(fallback) : null;
+      var fbKeyVal = $("fallbackApiKey").value.trim();
+      if (fbKeyPath && fbKeyVal) { payload.set[fbKeyPath] = fbKeyVal; }
       var btn = this; btn.disabled = true;
       fetch("/settings", {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: authHeaders(),
         body: JSON.stringify(payload)
       }).then(function (r) { return r.json(); }).then(function () {
-        setStatus($("recStatus"), "Сохранено. Движок: " + (RECOGNIZER_LABELS[rec] || rec), "ok");
+        var label = RECOGNIZER_LABELS[rec] || rec;
+        if (fallback) { label += " → резерв: " + (RECOGNIZER_LABELS[fallback] || fallback); }
+        setStatus($("recStatus"), "Сохранено. Движок: " + label, "ok");
         $("apiKey").value = "";
+        $("fallbackApiKey").value = "";
       }).catch(function (e) {
         setStatus($("recStatus"), "Ошибка: " + e.message, "err");
       }).then(function () { btn.disabled = false; });
     });
 
-    // ---------- Инициализация ----------
-    loadGoogleStatus();
-    loadSettings();
+    // ---------- Пользователи ----------
+    function renderUsers(users) {
+      var list = $("usersList");
+      list.innerHTML = "";
+      users.forEach(function (u) {
+        var row = document.createElement("div");
+        row.className = "user-row";
+
+        var who = document.createElement("div");
+        who.className = "who";
+        var uname = document.createElement("div");
+        uname.className = "uname";
+        uname.textContent = u.username;
+        var upos = document.createElement("div");
+        upos.className = "upos";
+        upos.textContent = u.position || "—";
+        who.appendChild(uname);
+        who.appendChild(upos);
+        row.appendChild(who);
+
+        if (u.is_admin) {
+          var badge = document.createElement("span");
+          badge.className = "badge-admin";
+          badge.textContent = "Админ";
+          row.appendChild(badge);
+        }
+
+        var del = document.createElement("button");
+        del.type = "button";
+        del.className = "del";
+        del.textContent = "Удалить";
+        del.disabled = currentUser && u.username === currentUser.username;
+        del.addEventListener("click", function () {
+          if (!window.confirm("Удалить пользователя «" + u.username + "»?")) { return; }
+          fetch("/api/users/" + encodeURIComponent(u.username), {
+            method: "DELETE", headers: authHeaders()
+          })
+            .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+            .then(function (res) {
+              if (res.ok) { loadUsers(); }
+              else { window.alert("Ошибка: " + (res.j.detail || "не удалось удалить")); }
+            })
+            .catch(function (e) { window.alert("Ошибка сети: " + e.message); });
+        });
+        row.appendChild(del);
+
+        list.appendChild(row);
+      });
+    }
+
+    function loadUsers() {
+      fetch("/api/users", { headers: authHeaders() })
+        .then(function (r) { return r.json(); })
+        .then(function (data) { renderUsers(data.users || []); })
+        .catch(function () {});
+    }
+
+    $("addUserBtn").addEventListener("click", function () {
+      var payload = {
+        username: $("newUsername").value.trim(),
+        password: $("newPassword").value,
+        position: $("newPosition").value.trim(),
+        is_admin: $("newIsAdmin").checked
+      };
+      if (!payload.username || !payload.password) {
+        setStatus($("usersStatus"), "Укажите логин и пароль", "err");
+        return;
+      }
+      var btn = this; btn.disabled = true;
+      fetch("/api/users", { method: "POST", headers: authHeaders(), body: JSON.stringify(payload) })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok) {
+            setStatus($("usersStatus"), "Пользователь «" + payload.username + "» добавлен.", "ok");
+            $("newUsername").value = ""; $("newPassword").value = "";
+            $("newPosition").value = ""; $("newIsAdmin").checked = false;
+            loadUsers();
+          } else {
+            setStatus($("usersStatus"), res.j.detail || "Не удалось добавить пользователя", "err");
+          }
+        })
+        .catch(function (e) { setStatus($("usersStatus"), "Ошибка сети: " + e.message, "err"); })
+        .then(function () { btn.disabled = false; });
+    });
+
+    // ---------- Авторизация: пускаем на страницу только вошедшего администратора ----------
+    function boot() {
+      var auth = getAuth();
+      if (!auth || !auth.token) {
+        window.location.href = "/login";
+        return;
+      }
+      fetch("/api/auth/me", { headers: authHeaders() })
+        .then(function (r) {
+          if (r.status === 401) {
+            try { window.localStorage.removeItem("cardscan.auth"); } catch (e) {}
+            window.location.href = "/login";
+            return null;
+          }
+          return r.json();
+        })
+        .then(function (user) {
+          if (!user) { return; }
+          if (!user.is_admin) {
+            window.location.href = "/";
+            return;
+          }
+          currentUser = user;
+          document.body.style.visibility = "";
+          loadGoogleStatus();
+          loadSettings();
+          loadUsers();
+        })
+        .catch(function () { window.location.href = "/login"; });
+    }
+
+    boot();
   })();
   </script>
 </body>

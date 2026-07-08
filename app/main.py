@@ -5,14 +5,17 @@
 
 Маршруты:
     GET  /            — мобильная страница съёмки (app/web/index.html)
+    GET  /login       — вход/создание первого администратора (app/web/login.html)
     GET  /static/*    — статика фронтенда
     GET  /photos/*    — сохранённые снимки визиток
-    POST /upload      — приём фото (multipart), мгновенная постановка в очередь
-    GET  /jobs        — статусы джобов (для живой ленты); попутно подтягивает
+    POST /upload      — приём фото (multipart), требует вход; мгновенная постановка в очередь
+    GET  /jobs        — статусы джобов (для живой ленты), требует вход; попутно подтягивает
                         актуальный «Статус лида»/комментарий из Google Sheets
-    GET  /settings    — текущие настройки (ключи замаскированы)
-    POST /settings    — обновление настроек
+    GET  /settings    — текущие настройки (ключи замаскированы), только админ
+    POST /settings    — обновление настроек, только админ
     GET  /health      — проверка живости
+    /api/auth/*       — вход, выход, статус первого запуска (см. app/auth.py)
+    /api/users*       — управление пользователями, только админ
 
 Python 3.9-совместимо.
 """
@@ -25,11 +28,11 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import FastAPI, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app import __version__
+from app import __version__, auth
 from app.config import Config
 from app.discovery import Discovery, get_lan_ip
 from app.pipeline import JobManager
@@ -123,6 +126,94 @@ async def index() -> Any:
 async def health() -> Dict[str, Any]:
     cfg = _config(app)
     return {"status": "ok", "recognizer": cfg.recognizer}
+
+
+# ---------- Авторизация ----------
+
+@app.get("/login")
+async def login_page() -> Any:
+    f = WEB_DIR / "login.html"
+    if not f.exists():
+        return JSONResponse({"error": "login.html отсутствует"}, status_code=500)
+    return FileResponse(str(f))
+
+
+@app.get("/api/auth/bootstrap-status")
+async def auth_bootstrap_status() -> Dict[str, Any]:
+    return {"needs_setup": not await auth.has_any_user()}
+
+
+@app.post("/api/auth/bootstrap")
+async def auth_bootstrap(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Создаёт первого пользователя (админа). Работает только пока пользователей нет вовсе."""
+    username = str(payload.get("username") or "")
+    password = str(payload.get("password") or "")
+    position = str(payload.get("position") or "")
+    try:
+        user = await auth.bootstrap_admin(username, password, position)
+    except PermissionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    token = await auth.create_session(user["username"])
+    return {"token": token, "user": user}
+
+
+@app.post("/api/auth/login")
+async def auth_login(payload: Dict[str, Any]) -> Dict[str, Any]:
+    username = str(payload.get("username") or "")
+    password = str(payload.get("password") or "")
+    user = await auth.authenticate(username, password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    token = await auth.create_session(user["username"])
+    return {"token": token, "user": user}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(request: Request, user: Dict[str, Any] = Depends(auth.require_user)) -> Dict[str, Any]:
+    await auth.delete_session(auth.extract_token(request))
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+async def auth_me(user: Dict[str, Any] = Depends(auth.require_user)) -> Dict[str, Any]:
+    return user
+
+
+# ---------- Пользователи (только администратор) ----------
+
+@app.get("/api/users")
+async def users_list(_admin: Dict[str, Any] = Depends(auth.require_admin)) -> Dict[str, Any]:
+    return {"users": await auth.list_users()}
+
+
+@app.post("/api/users")
+async def users_create(
+    payload: Dict[str, Any], _admin: Dict[str, Any] = Depends(auth.require_admin)
+) -> Dict[str, Any]:
+    username = str(payload.get("username") or "")
+    password = str(payload.get("password") or "")
+    position = str(payload.get("position") or "")
+    is_admin = bool(payload.get("is_admin", False))
+    try:
+        user = await auth.create_user(username, password, position, is_admin)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True, "user": user}
+
+
+@app.delete("/api/users/{username}")
+async def users_delete(
+    username: str, _admin: Dict[str, Any] = Depends(auth.require_admin)
+) -> Dict[str, Any]:
+    try:
+        await auth.delete_user(username)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except PermissionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"ok": True}
 
 
 # ---------- PWA: установка как приложение на телефон ----------
@@ -239,12 +330,14 @@ async def setup_page() -> Any:
 
 
 @app.get("/api/google/status")
-async def google_status() -> Dict[str, Any]:
+async def google_status(_admin: Dict[str, Any] = Depends(auth.require_admin)) -> Dict[str, Any]:
     return _google_status()
 
 
 @app.post("/api/google/credentials")
-async def google_upload_credentials(credentials: UploadFile) -> Dict[str, Any]:
+async def google_upload_credentials(
+    credentials: UploadFile, _admin: Dict[str, Any] = Depends(auth.require_admin)
+) -> Dict[str, Any]:
     """Принимает JSON-ключ сервисного аккаунта и сохраняет его."""
     cfg = _config(app)
     raw = await credentials.read()
@@ -272,7 +365,9 @@ async def google_upload_credentials(credentials: UploadFile) -> Dict[str, Any]:
 
 
 @app.post("/api/google/config")
-async def google_config(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def google_config(
+    payload: Dict[str, Any], _admin: Dict[str, Any] = Depends(auth.require_admin)
+) -> Dict[str, Any]:
     """Сохраняет настройки таблицы (ID/URL, лист, вкл/выкл, список менеджеров)."""
     cfg = _config(app)
     from app.sheets import extract_spreadsheet_id
@@ -293,7 +388,7 @@ async def google_config(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @app.post("/api/google/test")
-async def google_test() -> Dict[str, Any]:
+async def google_test(_admin: Dict[str, Any] = Depends(auth.require_admin)) -> Dict[str, Any]:
     """Проверяет подключение: открывает таблицу и готовит заголовки."""
     cfg = _config(app)
     from app.sheets import SheetsWriter
@@ -307,10 +402,16 @@ async def google_test() -> Dict[str, Any]:
 
 
 @app.post("/upload")
-async def upload(image: UploadFile, source_event: str = Form("")) -> Dict[str, str]:
+async def upload(
+    image: UploadFile,
+    source_event: str = Form(""),
+    user: Dict[str, Any] = Depends(auth.require_user),
+) -> Dict[str, str]:
     """Принимает фото визитки, СРАЗУ ставит в очередь и возвращает job_id.
 
     Не ждёт распознавания — сотрудник может тут же снимать следующую визитку.
+    Кто снял визитку (для колонки «Сотрудник» в таблице) берётся из сессии,
+    а не из тела запроса — так это нельзя подделать с телефона.
     """
     cfg = _config(app)
     data = await image.read()
@@ -328,19 +429,21 @@ async def upload(image: UploadFile, source_event: str = Form("")) -> Dict[str, s
         mime_type=mime,
         source_event=source_event.strip(),
         filename=image.filename or name,
+        scanned_by=user["username"],
+        scanned_by_position=user.get("position", ""),
     )
     return {"job_id": job_id}
 
 
 @app.get("/jobs")
-async def jobs() -> Dict[str, Any]:
+async def jobs(_user: Dict[str, Any] = Depends(auth.require_user)) -> Dict[str, Any]:
     manager = _manager(app)
     await manager.refresh_lead_statuses()
     return {"jobs": manager.list_jobs()}
 
 
 @app.get("/settings")
-async def get_settings() -> Dict[str, Any]:
+async def get_settings(_admin: Dict[str, Any] = Depends(auth.require_admin)) -> Dict[str, Any]:
     cfg = _config(app)
     return {
         "recognizer": cfg.recognizer,
@@ -351,7 +454,9 @@ async def get_settings() -> Dict[str, Any]:
 
 
 @app.post("/settings")
-async def post_settings(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def post_settings(
+    payload: Dict[str, Any], _admin: Dict[str, Any] = Depends(auth.require_admin)
+) -> Dict[str, Any]:
     """Обновляет ограниченный набор настроек и сохраняет config.yaml.
 
     Допустимые ключи: recognizer, sales_reps, и точечные пути вида

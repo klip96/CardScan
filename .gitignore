@@ -13,6 +13,8 @@ service_account.json
 
 # --- Данные времени выполнения ---
 data/photos/
+data/users.json
+data/sessions.json
 
 # --- Сборка PyInstaller / инсталлятор ---
 build/

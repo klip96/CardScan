@@ -23,6 +23,7 @@
   // --- Настройки ---
   var POLL_INTERVAL_MS = 1500;          // период опроса /jobs
   var STORAGE_KEY = "cardscan.sourceEvent";
+  var AUTH_KEY = "cardscan.auth";       // { token, user } — см. login.html
 
   // --- Ссылки на элементы DOM (id заданы в index.html) ---
   var sourceEventInput = document.getElementById("sourceEvent");
@@ -33,6 +34,38 @@
   var confirmBtn = document.getElementById("confirmBtn");
   var retakeBtn = document.getElementById("retakeBtn");
   var feed = document.getElementById("feed");
+  var whoAmI = document.getElementById("whoAmI");
+  var logoutBtn = document.getElementById("logoutBtn");
+
+  // ----- Авторизация -----
+
+  function getAuth() {
+    try {
+      var raw = window.localStorage.getItem(AUTH_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function clearAuth() {
+    try { window.localStorage.removeItem(AUTH_KEY); } catch (e) { /* ignore */ }
+  }
+
+  function redirectToLogin() {
+    window.location.href = "/login";
+  }
+
+  function authHeaders() {
+    var auth = getAuth();
+    return auth && auth.token ? { "Authorization": "Bearer " + auth.token } : {};
+  }
+
+  // Токен просрочен/отозван на сервере — разлогиниваем и уводим на /login.
+  function handleUnauthorized() {
+    clearAuth();
+    redirectToLogin();
+  }
 
   // --- Локальное состояние ---
   var selectedFile = null;       // выбранный, ещё не отправленный файл
@@ -185,8 +218,12 @@
     confirmBtn.disabled = true;
     confirmBtn.textContent = "Отправка…";
 
-    fetch("/upload", { method: "POST", body: formData })
+    fetch("/upload", { method: "POST", headers: authHeaders(), body: formData })
       .then(function (resp) {
+        if (resp.status === 401) {
+          handleUnauthorized();
+          throw new Error("Сессия истекла");
+        }
         if (!resp.ok) {
           throw new Error("HTTP " + resp.status);
         }
@@ -435,8 +472,12 @@
 
   // Один тик поллинга.
   function pollJobs() {
-    return fetch("/jobs", { method: "GET", cache: "no-store" })
+    return fetch("/jobs", { method: "GET", cache: "no-store", headers: authHeaders() })
       .then(function (resp) {
+        if (resp.status === 401) {
+          handleUnauthorized();
+          throw new Error("Сессия истекла");
+        }
         if (!resp.ok) {
           throw new Error("HTTP " + resp.status);
         }
@@ -456,9 +497,41 @@
       });
   }
 
+  // Шапка: показываем, кто вошёл, и кнопку выхода.
+  function renderWhoAmI() {
+    var auth = getAuth();
+    if (!whoAmI || !auth || !auth.user) { return; }
+    var label = auth.user.username;
+    if (auth.user.position) { label += " · " + auth.user.position; }
+    setText(whoAmI, label);
+  }
+
+  function onLogout() {
+    var auth = getAuth();
+    var headers = authHeaders();
+    clearAuth();
+    // Отзываем сессию на сервере, но не ждём ответа — уходим на /login сразу.
+    if (auth) {
+      fetch("/api/auth/logout", { method: "POST", headers: headers }).catch(function () {});
+    }
+    redirectToLogin();
+  }
+
   // ----- Инициализация -----
 
   function init() {
+    // Нет валидного токена на устройстве — сразу на экран входа,
+    // без вспышки содержимого камеры/ленты.
+    if (!getAuth()) {
+      redirectToLogin();
+      return;
+    }
+
+    renderWhoAmI();
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", onLogout);
+    }
+
     restoreSourceEvent();
 
     sourceEventInput.addEventListener("input", saveSourceEvent);

@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1d21">
+  <title>Вход — Сканер визиток</title>
+  <style>
+    :root {
+      --bg: #1a1d21; --surface: #24282e; --surface-2: #2d323a; --border: #3a4049;
+      --text: #e8eaed; --text-muted: #9aa0a6; --accent: #3b82f6;
+      --ok: #22a06b; --warn: #d97706; --err: #dc4848; --radius: 14px;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 17px; line-height: 1.45;
+    }
+    .app { max-width: 420px; margin: 0 auto; padding: 56px 16px; }
+    header { text-align: center; margin-bottom: 24px; }
+    header h1 { margin: 0; font-size: 24px; font-weight: 700; }
+    .sub { color: var(--text-muted); font-size: 14px; margin-top: 6px; }
+
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px 16px;
+    }
+    label.lbl { display: block; font-size: 14px; color: var(--text-muted); margin: 12px 0 6px; }
+    label.lbl:first-child { margin-top: 0; }
+    input[type="text"], input[type="password"] {
+      width: 100%; padding: 13px 14px; font-size: 16px; color: var(--text);
+      background: var(--bg); border: 1px solid var(--border); border-radius: 12px; outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      width: 100%; padding: 15px 16px; font-size: 16px; font-weight: 600; color: #fff;
+      background: var(--accent); border: 1px solid var(--accent); border-radius: 12px;
+      cursor: pointer; user-select: none; margin-top: 18px;
+    }
+    .btn:active { transform: scale(0.99); }
+    .btn[disabled] { opacity: 0.5; cursor: default; }
+
+    .status {
+      margin-top: 14px; padding: 12px 14px; border-radius: 12px; font-size: 14px;
+      background: var(--surface-2); border: 1px solid var(--border);
+    }
+    .status.ok { border-color: var(--ok); color: #b8f0d6; background: rgba(34,160,107,0.12); }
+    .status.err { border-color: var(--err); color: #ffc9c9; background: rgba(220,72,72,0.12); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🪪 Сканер визиток</h1>
+      <p class="sub" id="modeHint">Вход в систему</p>
+    </header>
+
+    <div class="card">
+      <!-- Первый запуск: пользователей ещё нет — создаём администратора -->
+      <div id="bootstrapForm" class="hidden">
+        <label class="lbl" for="bUsername">Логин</label>
+        <input type="text" id="bUsername" autocomplete="username">
+        <label class="lbl" for="bPassword">Пароль</label>
+        <input type="password" id="bPassword" autocomplete="new-password">
+        <label class="lbl" for="bPosition">Должность</label>
+        <input type="text" id="bPosition" placeholder="Например: Руководитель отдела продаж">
+        <button class="btn" id="bootstrapBtn">Создать администратора</button>
+      </div>
+
+      <!-- Обычный вход -->
+      <div id="loginForm" class="hidden">
+        <label class="lbl" for="lUsername">Логин</label>
+        <input type="text" id="lUsername" autocomplete="username">
+        <label class="lbl" for="lPassword">Пароль</label>
+        <input type="password" id="lPassword" autocomplete="current-password">
+        <button class="btn" id="loginBtn">Войти</button>
+      </div>
+
+      <div class="status hidden" id="authStatus"></div>
+    </div>
+  </div>
+
+  <script>
+  (function () {
+    "use strict";
+
+    function $(id) { return document.getElementById(id); }
+    function show(el) { el.classList.remove("hidden"); }
+    function setStatus(text, kind) {
+      var el = $("authStatus");
+      el.className = "status " + (kind || "");
+      el.textContent = text;
+      show(el);
+    }
+
+    // Уже вошли (валидный токен уже есть на этом устройстве) — сразу к съёмке.
+    try {
+      if (window.localStorage.getItem("cardscan.auth")) {
+        window.location.href = "/";
+        return;
+      }
+    } catch (e) { /* localStorage недоступен — просто покажем форму входа */ }
+
+    function saveAuthAndGo(token, user) {
+      try {
+        window.localStorage.setItem("cardscan.auth", JSON.stringify({ token: token, user: user }));
+      } catch (e) { /* приватный режим — токен не переживёт закрытие вкладки, это ок */ }
+      window.location.href = "/";
+    }
+
+    // ----- определяем режим: первый запуск (создать админа) или обычный вход -----
+    fetch("/api/auth/bootstrap-status")
+      .then(function (r) { return r.json(); })
+      .then(function (s) {
+        if (s.needs_setup) {
+          $("modeHint").textContent = "Первый запуск — создайте учётную запись администратора";
+          show($("bootstrapForm"));
+        } else {
+          show($("loginForm"));
+        }
+      })
+      .catch(function () { show($("loginForm")); });
+
+    // ----- создание первого администратора -----
+    $("bootstrapBtn").addEventListener("click", function () {
+      var payload = {
+        username: $("bUsername").value.trim(),
+        password: $("bPassword").value,
+        position: $("bPosition").value.trim()
+      };
+      if (!payload.username || !payload.password) {
+        setStatus("Укажите логин и пароль", "err");
+        return;
+      }
+      var btn = this; btn.disabled = true;
+      fetch("/api/auth/bootstrap", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok) { saveAuthAndGo(res.j.token, res.j.user); return; }
+          setStatus(res.j.detail || "Не удалось создать администратора", "err");
+          btn.disabled = false;
+        })
+        .catch(function (e) { setStatus("Ошибка сети: " + e.message, "err"); btn.disabled = false; });
+    });
+
+    // ----- обычный вход -----
+    $("loginBtn").addEventListener("click", function () {
+      var payload = { username: $("lUsername").value.trim(), password: $("lPassword").value };
+      if (!payload.username || !payload.password) {
+        setStatus("Укажите логин и пароль", "err");
+        return;
+      }
+      var btn = this; btn.disabled = true;
+      fetch("/api/auth/login", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      })
+        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+        .then(function (res) {
+          if (res.ok) { saveAuthAndGo(res.j.token, res.j.user); return; }
+          setStatus(res.j.detail || "Неверный логин или пароль", "err");
+          btn.disabled = false;
+        })
+        .catch(function (e) { setStatus("Ошибка сети: " + e.message, "err"); btn.disabled = false; });
+    });
+
+    // Enter в любом поле — отправка видимой формы.
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter") { return; }
+      if (!$("bootstrapForm").classList.contains("hidden")) { $("bootstrapBtn").click(); }
+      else if (!$("loginForm").classList.contains("hidden")) { $("loginBtn").click(); }
+    });
+  })();
+  </script>
+</body>
+</html>

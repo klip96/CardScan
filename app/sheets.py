@@ -40,6 +40,15 @@ def extract_spreadsheet_id(value: str) -> str:
     return m.group(0) if m else value
 
 
+def _col_letter(index: int) -> str:
+    """Номер колонки (1-based) в букву A1-нотации (1->A, 27->AA и т.д.)."""
+    letters = ""
+    while index > 0:
+        index, rem = divmod(index - 1, 26)
+        letters = chr(65 + rem) + letters
+    return letters
+
+
 def read_service_account_email(credentials_path) -> Optional[str]:
     """Читает client_email из JSON-ключа сервисного аккаунта (или None)."""
     try:
@@ -76,6 +85,8 @@ class SheetsWriter:
         "Статус лида",
         "Комментарий",
         "Фото визитки",
+        "Сотрудник",
+        "Должность сотрудника",
     ]
 
     #: Буквы колонок «Статус лида» / «Комментарий» — совпадают с позицией
@@ -159,12 +170,23 @@ class SheetsWriter:
 
     # ----- работа с заголовками -----
     def ensure_headers(self) -> None:
-        """Гарантирует наличие строки заголовков и выпадающего списка ответственных."""
+        """Гарантирует наличие строки заголовков и выпадающего списка ответственных.
+
+        Если лист совсем пустой — пишет все заголовки. Если в нём уже есть
+        данные (лист использовался ДО того, как появились новые колонки,
+        например «Сотрудник»/«Должность сотрудника»), но заголовков меньше,
+        чем в текущем HEADERS — дописывает недостающий «хвост», не трогая
+        уже существующие ячейки.
+        """
         ws = self._worksheet()
 
         first_row = ws.row_values(1)
         if not any(cell.strip() for cell in first_row):
             ws.update("A1", [self.HEADERS])
+        elif len(first_row) < len(self.HEADERS):
+            missing = self.HEADERS[len(first_row):]
+            start_col = _col_letter(len(first_row) + 1)
+            ws.update("{0}1".format(start_col), [missing])
 
         self._apply_sales_validation(ws)
 
@@ -252,11 +274,19 @@ class SheetsWriter:
         }
 
     # ----- добавление строки -----
-    def append_card(self, card: CardData, photo_ref: str = "") -> int:
+    def append_card(
+        self,
+        card: CardData,
+        photo_ref: str = "",
+        scanned_by: str = "",
+        scanned_by_position: str = "",
+    ) -> int:
         """Добавляет визитку в таблицу и возвращает номер добавленной строки.
 
         Колонки «Ответственный от продаж» (3), «Статус лида» (15) и
         «Комментарий» (16) остаются пустыми — их заполняет человек.
+        «Сотрудник»/«Должность сотрудника» (18-19) заполняются автоматически
+        из аккаунта, которым выполнен вход на телефоне.
         """
         self.ensure_headers()
         ws = self._worksheet()
@@ -283,6 +313,8 @@ class SheetsWriter:
             "",                   # Статус лида (заполняет человек)
             "",                   # Комментарий (заполняет человек)
             photo_ref,            # Фото визитки
+            scanned_by,           # Сотрудник
+            scanned_by_position,  # Должность сотрудника
         ]
 
         ws.append_row(row, value_input_option="USER_ENTERED")

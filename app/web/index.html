@@ -79,6 +79,32 @@
       white-space: nowrap;
     }
     .header-link:active { transform: scale(0.97); }
+    .header-actions {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .header-user {
+      font-size: 13px;
+      color: var(--text-muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 110px;
+    }
+    .header-logout {
+      flex: 0 0 auto;
+      font-size: 15px;
+      color: var(--text-muted);
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .header-logout:active { transform: scale(0.97); }
 
     /* --- Секции --- */
     section { margin: 16px 0; }
@@ -270,7 +296,11 @@
     <!-- 1) Шапка -->
     <header>
       <h1>Сканер визиток</h1>
-      <a class="header-link" href="/setup">⚙ Настройки</a>
+      <div class="header-actions">
+        <span class="header-user" id="whoAmI"></span>
+        <a class="header-link" href="/setup">⚙</a>
+        <button type="button" class="header-logout" id="logoutBtn" title="Выйти">⎋</button>
+      </div>
     </header>
 
     <!-- 2) Поле сессии (источник подставляется во все визитки) -->

@@ -24,6 +24,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULTS: Dict[str, Any] = {
     # cloud:gemini | cloud:openai | cloud:claude | local-ocr | local-vision
     "recognizer": "local-vision",
+    # Резервный движок: если основной вернул пустой результат для ВСЕХ визиток
+    # на фото, конвейер автоматически пробует этот. "" = резерв выключен.
+    "recognizer_fallback": "",
     "cloud": {
         "gemini": {"api_key": "", "model": "gemini-2.0-flash"},
         "openai": {"api_key": "", "model": "gpt-4o"},
