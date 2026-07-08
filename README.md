@@ -1,83 +1,84 @@
-# Агент оцифровки визиток
+# Business Card Scanning Agent
 
-Локальный веб-сервис, который превращает фото бумажной визитки в строку
-Google-таблицы. Сотрудник на выставке снимает визитку телефоном через
-браузер — сервис распознаёт данные, при желании обогащает их из интернета и
-дописывает лид в таблицу. Всё работает на вашем ПК; в облако уходят только
-запросы к выбранному распознавателю и веб-поиск.
+A local web service that turns a photo of a paper business card into a row in
+a Google Sheet. A field employee at a trade show photographs a card with
+their phone's browser — the service recognizes the data, optionally enriches
+it from the web, and appends the lead to the sheet. Everything runs on your
+PC; only requests to the selected recognizer and the web search go to the
+cloud.
 
-## Возможности
+## Features
 
-- Мобильная страница съёмки (открывается в браузере телефона, без установки приложений).
-- Загрузка готового фото из галереи/файлов, если визитку уже сняли заранее.
-- Установка как приложение на телефон (PWA): иконка на главном экране, запуск на весь экран.
-- Автоматическое подключение телефона к ПК по сети — без ручного ввода IP-адреса.
-- Распознавание визитки одним из движков:
-  - облачные LLM: Gemini / OpenAI / Claude (точно, нужен API-ключ и интернет);
-  - локальный OCR (Tesseract) — офлайн, бесплатно, легко для ПК;
-  - локальная vision-модель через Ollama (офлайн, требовательнее к железу).
-- Необязательное обогащение данных из интернета (точное название, адрес, отрасль, сайт).
-- Автозапись лидов в Google Sheets с выпадающим списком ответственных менеджеров.
-- Очередь: сотрудник снимает визитки подряд, не дожидаясь распознавания каждой.
+- Mobile capture page (opens in the phone's browser, no app installation needed).
+- Upload an already-taken photo from the gallery/files, if the card was photographed in advance.
+- Installable as a phone app (PWA): home-screen icon, full-screen launch.
+- Automatic phone-to-PC connection over the network — no manual IP entry.
+- Card recognition via one of several engines:
+  - cloud LLMs: Gemini / OpenAI / Claude (accurate, needs an API key and internet);
+  - local OCR (Tesseract) — offline, free, light on the PC;
+  - local vision model via Ollama (offline, more demanding on hardware).
+- Optional data enrichment from the web (exact company name, address, industry, website).
+- Automatic lead logging to Google Sheets with a dropdown list of responsible managers.
+- Queue-based processing: an employee can photograph cards back-to-back without waiting for each one to finish recognizing.
 
-## Структура проекта
+## Project structure
 
 ```
 Agent_LOCAL/
 ├─ app/
-│  ├─ main.py              # FastAPI-приложение (точка входа: app.main:app)
-│  ├─ config.py            # загрузка config.yaml
-│  ├─ pipeline.py          # очередь джобов и конвейер обработки
-│  ├─ enrich.py            # обогащение данных из интернета
-│  ├─ sheets.py            # запись в Google Sheets
+│  ├─ main.py              # FastAPI application (entry point: app.main:app)
+│  ├─ config.py            # loads config.yaml
+│  ├─ pipeline.py          # job queue and processing pipeline
+│  ├─ enrich.py            # data enrichment from the web
+│  ├─ sheets.py            # writes to Google Sheets
 │  ├─ recognizers/
-│  │  ├─ base.py           # контракты CardData / Recognizer
+│  │  ├─ base.py           # CardData / Recognizer contracts
 │  │  ├─ gemini.py         # cloud:gemini
 │  │  ├─ openai.py         # cloud:openai
 │  │  ├─ claude.py         # cloud:claude
 │  │  ├─ local_ocr.py      # local-ocr  (Tesseract)
 │  │  └─ local_vision.py   # local-vision (Ollama)
-│  ├─ discovery.py         # публикация сервера в сети по mDNS (cardscan.local)
+│  ├─ discovery.py         # publishes the server on the network via mDNS (cardscan.local)
 │  └─ web/
-│     ├─ index.html        # мобильная страница съёмки
-│     ├─ connect.html      # страница подключения с QR-кодом (на ПК)
-│     ├─ manifest.webmanifest  # манифест PWA (иконки, имя, тема)
-│     ├─ sw.js             # service worker для установки PWA
-│     ├─ icon-192.png      # иконка приложения 192×192
-│     ├─ icon-512.png      # иконка приложения 512×512
-│     └─ apple-touch-icon.png  # иконка для iOS «На главный экран»
-├─ data/photos/            # сохранённые снимки визиток (создаётся автоматически)
-├─ ollama_setup/           # установка локальной vision-модели
+│     ├─ index.html        # mobile capture page
+│     ├─ connect.html      # connection page with a QR code (on the PC)
+│     ├─ manifest.webmanifest  # PWA manifest (icons, name, theme)
+│     ├─ sw.js             # service worker for PWA installation
+│     ├─ icon-192.png      # app icon 192×192
+│     ├─ icon-512.png      # app icon 512×512
+│     └─ apple-touch-icon.png  # icon for iOS "Add to Home Screen"
+├─ data/photos/            # saved card photos (created automatically)
+├─ ollama_setup/           # local vision model installation
 │  ├─ install_and_pull.ps1
 │  └─ install_and_pull.sh
-├─ installer/              # сборка Windows-инсталлятора
-│  ├─ build_all.bat        # сборка exe + инсталлятора в одно действие
+├─ installer/              # Windows installer build
+│  ├─ build_all.bat        # build the exe + installer in one step
 │  ├─ installer.iss        # Inno Setup
 │  └─ build_exe.spec       # PyInstaller
-├─ config.example.yaml     # шаблон конфигурации
-├─ config.yaml             # ваш конфиг (создаётся из шаблона, в git не попадает)
-├─ service_account.json    # ключ Google (в git не попадает)
+├─ config.example.yaml     # configuration template
+├─ config.yaml             # your config (created from the template, not tracked in git)
+├─ service_account.json    # Google key (not tracked in git)
 ├─ requirements.txt
-├─ run.bat                 # запуск под Windows
-└─ run.sh                  # запуск под macOS/Linux
+├─ run.bat                 # run on Windows
+└─ run.sh                  # run on macOS/Linux
 ```
 
-## Требования
+## Requirements
 
-- Python 3.9 или новее.
-- ОС: Windows 10/11, macOS или Linux.
-- Интернет — только для облачных движков и обогащения (для `local-ocr` не нужен).
-- Для записи в Google Sheets — аккаунт Google и доступ к Google Cloud Console.
-- Для `local-vision` — установленная Ollama (см. раздел ниже).
-- Для `local-ocr` — системный бинарь Tesseract с языковыми пакетами `rus` и `eng`.
+- Python 3.9 or newer.
+- OS: Windows 10/11, macOS, or Linux.
+- Internet — only needed for cloud engines and enrichment (not needed for `local-ocr`).
+- For writing to Google Sheets — a Google account and access to Google Cloud Console.
+- For `local-vision` — Ollama installed (see the section below).
+- For `local-ocr` — the Tesseract system binary with the `rus` and `eng` language packs.
 
-## Установка
+## Installation
 
-1. Откройте терминал в папке проекта.
+1. Open a terminal in the project folder.
 
-2. Создайте и активируйте виртуальное окружение:
+2. Create and activate a virtual environment:
 
-   Windows (PowerShell или cmd):
+   Windows (PowerShell or cmd):
    ```
    python -m venv venv
    venv\Scripts\activate
@@ -89,17 +90,17 @@ Agent_LOCAL/
    source venv/bin/activate
    ```
 
-3. Установите зависимости:
+3. Install the dependencies:
    ```
    pip install -r requirements.txt
    ```
 
-   Облачные пакеты (`google-genai`, `openai`, `anthropic`) можно не ставить все —
-   достаточно тех, что соответствуют выбранному движку. Импорт проекта не падает,
-   если какой-то опциональный пакет отсутствует; ошибка появится только при
-   реальной попытке использовать соответствующий движок.
+   You don't need to install all the cloud packages (`google-genai`, `openai`,
+   `anthropic`) — only the one matching your chosen engine. Importing the
+   project doesn't fail if an optional package is missing; the error only
+   shows up when you actually try to use that engine.
 
-4. Скопируйте шаблон конфигурации и отредактируйте его:
+4. Copy the configuration template and edit it:
 
    Windows:
    ```
@@ -110,192 +111,194 @@ Agent_LOCAL/
    cp config.example.yaml config.yaml
    ```
 
-   Откройте `config.yaml` и заполните нужные поля (движок, API-ключ, Google Sheets).
+   Open `config.yaml` and fill in the fields you need (engine, API key, Google Sheets).
 
-## Получение API-ключа
+## Getting an API key
 
-Нужен только для облачных движков (`cloud:gemini`, `cloud:openai`, `cloud:claude`).
-Заполните ключ в `config.yaml` в соответствующей секции `cloud:` или через UI настроек.
+Only needed for the cloud engines (`cloud:gemini`, `cloud:openai`, `cloud:claude`).
+Fill in the key in `config.yaml` under the matching `cloud:` section, or via the settings UI.
 
-- Gemini: https://aistudio.google.com/apikey — создайте ключ, вставьте в
+- Gemini: https://aistudio.google.com/apikey — create a key, paste it into
   `cloud.gemini.api_key`.
-- OpenAI: https://platform.openai.com/api-keys — создайте ключ, вставьте в
+- OpenAI: https://platform.openai.com/api-keys — create a key, paste it into
   `cloud.openai.api_key`.
-- Claude (Anthropic): https://console.anthropic.com/ — раздел API Keys, вставьте
-  в `cloud.claude.api_key`.
+- Claude (Anthropic): https://console.anthropic.com/ — the API Keys section, paste it
+  into `cloud.claude.api_key`.
 
-Ключи хранятся локально в `config.yaml`. В веб-интерфейсе они показываются
-замаскированными (`••••XXXX`).
+Keys are stored locally in `config.yaml`. The web UI shows them masked
+(`••••XXXX`).
 
-## Настройка Google Sheets
+## Setting up Google Sheets
 
-> **Проще всего — через интерфейс приложения.** Запустите приложение и откройте
-> на ПК страницу **http://localhost:8000/setup** (или кнопка «⚙ Настройки» в шапке).
-> Там можно: загрузить файл-ключ, увидеть email сервисного аккаунта (которому надо
-> открыть доступ к таблице) с кнопкой «Скопировать», вставить ссылку на таблицу и
-> нажать **«Проверить подключение»** — без ручного редактирования `config.yaml`.
-> Ниже — что для этого нужно подготовить в Google Cloud (шаги 1–4) и как выдать доступ.
+> **The easiest way is through the app's UI.** Start the app and open
+> **http://localhost:8000/setup** on the PC (or the "⚙ Settings" link in the header).
+> There you can: upload the key file, see the service account's email (which
+> needs access to the spreadsheet) with a "Copy" button, paste the
+> spreadsheet link, and click **"Test connection"** — no need to manually edit
+> `config.yaml`. Below is what you need to prepare in Google Cloud first
+> (steps 1-4) and how to grant access.
 
-Запись лидов идёт от имени сервисного аккаунта Google. Шаги:
+Leads are written under a Google service account. Steps:
 
-1. Откройте https://console.cloud.google.com/ и создайте новый проект
-   (или выберите существующий).
-2. Включите **Google Sheets API**: меню «APIs & Services» → «Library» →
-   найдите «Google Sheets API» → «Enable». (Если планируете автосоздание
-   таблиц — включите ещё «Google Drive API».)
-3. Создайте сервисный аккаунт: «APIs & Services» → «Credentials» →
-   «Create credentials» → «Service account». Имя любое, роли можно не назначать.
-4. Создайте ключ для сервисного аккаунта: на странице аккаунта вкладка «Keys» →
-   «Add key» → «Create new key» → тип **JSON** → «Create». Скачается JSON-файл.
-5. Переименуйте скачанный файл в `service_account.json` и положите в корень
-   проекта (рядом с `config.yaml`). Имя файла настраивается в
+1. Open https://console.cloud.google.com/ and create a new project
+   (or select an existing one).
+2. Enable the **Google Sheets API**: "APIs & Services" menu → "Library" →
+   search for "Google Sheets API" → "Enable". (If you want spreadsheets to be
+   auto-created, also enable "Google Drive API".)
+3. Create a service account: "APIs & Services" → "Credentials" →
+   "Create credentials" → "Service account". Any name works, roles are optional.
+4. Create a key for the service account: on the account page, the "Keys" tab →
+   "Add key" → "Create new key" → type **JSON** → "Create". A JSON file downloads.
+5. Rename the downloaded file to `service_account.json` and place it in the
+   project root (next to `config.yaml`). The filename is configurable via
    `google_sheets.credentials_file`.
-6. Откройте JSON и найдите поле `client_email` (вид
-   `имя@проект.iam.gserviceaccount.com`).
-7. Создайте Google-таблицу. Нажмите «Поделиться» и дайте этому email права
-   **Редактор**. Без этого сервис не сможет писать в таблицу.
-8. Скопируйте `spreadsheet_id` из URL таблицы. В адресе
-   `https://docs.google.com/spreadsheets/d/<ЭТО_И_ЕСТЬ_ID>/edit#gid=0`
-   идентификатор — это часть между `/d/` и `/edit`. Вставьте его в
+6. Open the JSON file and find the `client_email` field (looks like
+   `name@project.iam.gserviceaccount.com`).
+7. Create a Google Sheet. Click "Share" and grant that email **Editor**
+   access. Without this the service can't write to the sheet.
+8. Copy the `spreadsheet_id` from the sheet's URL. In the address
+   `https://docs.google.com/spreadsheets/d/<THIS_IS_THE_ID>/edit#gid=0`,
+   the identifier is the part between `/d/` and `/edit`. Paste it into
    `google_sheets.spreadsheet_id`.
-9. При желании задайте имя листа в `google_sheets.worksheet` (по умолчанию «Лиды»).
+9. Optionally set the worksheet name in `google_sheets.worksheet` (defaults to "Лиды").
 
-Если запись в Sheets пока не нужна — поставьте `google_sheets.enabled: false`.
+If you don't need Sheets writing yet, set `google_sheets.enabled: false`.
 
-## Запуск
+## Running
 
-Windows — двойной клик по `run.bat` (или из терминала):
+Windows — double-click `run.bat` (or from a terminal):
 ```
 run.bat
 ```
 
 macOS / Linux:
 ```
-chmod +x run.sh    # один раз
+chmod +x run.sh    # once
 ./run.sh
 ```
 
-Скрипты при необходимости создают venv, ставят зависимости, поднимают сервер
-`uvicorn app.main:app --host 0.0.0.0 --port 8000` и открывают браузер на
+The scripts create a venv if needed, install dependencies, start the server
+`uvicorn app.main:app --host 0.0.0.0 --port 8000`, and open a browser at
 http://localhost:8000.
 
-Остановить сервер — Ctrl+C в терминале.
+Stop the server with Ctrl+C in the terminal.
 
-## Как зайти с телефона
+## Connecting from a phone
 
-1. ПК и телефон должны быть в одной Wi-Fi сети.
-2. Узнайте IP-адрес ПК:
-   - Windows: `ipconfig` → поле «IPv4-адрес» (например, `192.168.1.42`);
-   - macOS: «Системные настройки» → «Сеть», либо `ipconfig getifaddr en0`;
-   - Linux: `hostname -I` или `ip addr`.
-3. На телефоне откройте в браузере `http://<ip-ПК>:8000`
-   (например, `http://192.168.1.42:8000`).
-4. Если страница не открывается — проверьте, что брандмауэр ПК разрешает
-   входящие подключения на порт 8000.
+1. The PC and phone must be on the same Wi-Fi network.
+2. Find the PC's IP address:
+   - Windows: `ipconfig` → the "IPv4 Address" field (e.g. `192.168.1.42`);
+   - macOS: "System Settings" → "Network", or `ipconfig getifaddr en0`;
+   - Linux: `hostname -I` or `ip addr`.
+3. On the phone, open `http://<pc-ip>:8000` in the browser
+   (e.g. `http://192.168.1.42:8000`).
+4. If the page doesn't load — check that the PC's firewall allows
+   incoming connections on port 8000.
 
-Это запасной способ с ручным вводом IP. Обычно проще воспользоваться
-автоподключением по адресу `cardscan.local` или QR-кодом — см. раздел
-«Автоматическое подключение телефона к ПК» ниже.
+This is the manual-IP fallback method. It's usually easier to use
+auto-connect at `cardscan.local` or the QR code — see the "Automatic
+phone-to-PC connection" section below.
 
-## Загрузка готового фото
+## Uploading an existing photo
 
-Снимать визитку прямо в приложении не обязательно. Кроме кнопки съёмки камерой
-на странице есть отдельная кнопка выбора уже готового фото из галереи или
-файлов телефона.
+You don't have to take the photo inside the app. Besides the camera-capture
+button, the page has a separate button for picking an already-taken photo
+from the phone's gallery or files.
 
-Это удобно, когда:
+This is handy when:
 
-- визитка сфотографирована заранее (например, на выставке без интернета);
-- нужно загрузить скан или фото, присланное в мессенджере;
-- камера телефона не открывается из браузера.
+- the card was photographed in advance (e.g. at a trade show without internet);
+- you need to upload a scan or a photo received via messenger;
+- the phone's camera doesn't open from the browser.
 
-Выбранное фото попадает в ту же очередь распознавания, что и снимки с камеры:
-данные распознаются и дописываются в Google-таблицу так же, как при обычной
-съёмке.
+A picked photo goes into the same recognition queue as camera shots: the
+data is recognized and appended to the Google Sheet the same way as a
+regular capture.
 
-## Установка как приложение на телефон (PWA)
+## Installing as a phone app (PWA)
 
-Страницу съёмки можно поставить на телефон как обычное приложение — без
-магазинов приложений. Это веб-приложение (PWA): после установки появляется
-иконка на главном экране, а сама страница запускается на весь экран, без
-адресной строки браузера.
+The capture page can be installed on the phone as a regular app — no app
+stores needed. This is a web app (PWA): after installation, a home-screen
+icon appears, and the page itself launches full-screen, without the
+browser's address bar.
 
-Как установить:
+How to install:
 
-1. Откройте на телефоне адрес ПК в браузере — `http://cardscan.local:8000`
-   (см. раздел про автоподключение ниже) либо `http://<ip-ПК>:8000`.
-2. В меню браузера выберите **«Добавить на главный экран»**:
-   - Android (Chrome): меню «⋮» → «Установить приложение» / «Добавить на главный экран»;
-   - iPhone (Safari): кнопка «Поделиться» → «На экран „Домой“».
-3. Подтвердите добавление. На главном экране появится иконка «Сканер визиток».
+1. On the phone, open the PC's address in the browser — `http://cardscan.local:8000`
+   (see the auto-connect section below) or `http://<pc-ip>:8000`.
+2. In the browser menu, choose **"Add to Home Screen"**:
+   - Android (Chrome): "⋮" menu → "Install app" / "Add to Home screen";
+   - iPhone (Safari): "Share" button → "Add to Home Screen".
+3. Confirm the addition. A "Card Scanner" icon appears on the home screen.
 
-После установки запускайте приложение прямо с иконки — оно само откроет
-страницу съёмки на весь экран.
+After installation, launch the app straight from the icon — it will open
+the capture page full-screen on its own.
 
-Иконку, имя и тему оформления приложения задаёт файл
-`app/web/manifest.webmanifest`; за установку отвечает service worker
-`app/web/sw.js`. Дополнительно настраивать ничего не нужно.
+The app's icon, name, and theme are set by `app/web/manifest.webmanifest`;
+the service worker `app/web/sw.js` handles installation. No further
+configuration is needed.
 
-## Автоматическое подключение телефона к ПК
+## Automatic phone-to-PC connection
 
-Чтобы не вводить IP-адрес вручную, сервер публикует себя в локальной сети по
-mDNS (Bonjour/Zeroconf) под именем **`cardscan.local`**. Телефон в той же
-Wi-Fi сети просто открывает в браузере:
+So you don't have to type the IP address by hand, the server publishes
+itself on the local network via mDNS (Bonjour/Zeroconf) under the name
+**`cardscan.local`**. A phone on the same Wi-Fi network simply opens in
+its browser:
 
 ```
 http://cardscan.local:8000
 ```
 
-Адрес постоянный и не зависит от того, какой IP выдал роутер — настраивать
-ничего не требуется. PWA при этом грузится с самого ПК, поэтому все запросы
-(съёмка, очередь, загрузка фото) автоматически идут на ваш ПК; вводить адрес
-сервера в приложении не нужно.
+The address is stable and doesn't depend on whatever IP the router
+assigned — no configuration needed. The PWA loads from the PC itself, so
+all requests (capture, queue, photo upload) automatically go to your PC;
+there's no need to enter a server address in the app.
 
-### Запасной вариант — QR-код
+### Fallback — QR code
 
-Если телефон не открывает `cardscan.local` (или просто так быстрее), откройте
-на ПК страницу подключения:
+If the phone can't open `cardscan.local` (or it's just faster this way),
+open the connection page on the PC:
 
 ```
 http://localhost:8000/connect
 ```
 
-На ней показан QR-код со ссылкой на сервер. Наведите на него камеру телефона и
-перейдите по ссылке — откроется та же страница съёмки.
+It shows a QR code linking to the server. Point the phone's camera at it
+and follow the link — the same capture page opens.
 
-### Требования и ограничения
+### Requirements and limitations
 
-- ПК и телефон должны быть в **одной Wi-Fi сети**.
-- Имя `cardscan.local` работает на современных Android и iOS «из коробки».
-- Корпоративные и гостевые сети с включённой **изоляцией клиентов** (client
-  isolation / AP isolation) блокируют связь между устройствами и mDNS. В таком
-  случае используйте обычную домашнюю Wi-Fi сеть либо подключайтесь по прямому
-  IP-адресу или через QR-код.
+- The PC and phone must be on the **same Wi-Fi network**.
+- The `cardscan.local` name works out of the box on modern Android and iOS.
+- Corporate and guest networks with **client isolation** (AP isolation)
+  enabled block device-to-device communication and mDNS. In that case, use
+  a regular home Wi-Fi network, or connect via a direct IP address or the
+  QR code.
 
-## Выбор движка распознавания: cloud vs local
+## Choosing a recognition engine: cloud vs local
 
-Движок задаётся полем `recognizer` в `config.yaml` либо в UI настроек.
+The engine is set via the `recognizer` field in `config.yaml` or in the settings UI.
 
-| Движок         | Интернет | Стоимость | Точность | Нагрузка на ПК |
-|----------------|----------|-----------|----------|----------------|
-| `cloud:gemini` | нужен    | низкая    | высокая  | минимальная    |
-| `cloud:openai` | нужен    | средняя   | высокая  | минимальная    |
-| `cloud:claude` | нужен    | средняя   | высокая  | минимальная    |
-| `local-ocr`    | не нужен | бесплатно | средняя  | низкая         |
-| `local-vision` | не нужен | бесплатно | выше OCR | высокая        |
+| Engine         | Internet | Cost      | Accuracy   | PC load |
+|----------------|----------|-----------|------------|---------|
+| `cloud:gemini` | required | low       | high       | minimal |
+| `cloud:openai` | required | medium    | high       | minimal |
+| `cloud:claude` | required | medium    | high       | minimal |
+| `local-ocr`    | not needed | free    | medium     | low     |
+| `local-vision` | not needed | free    | above OCR  | high    |
 
-Рекомендации:
-- есть интернет и нужен лучший результат с минимальными хлопотами — `cloud:gemini`;
-- важна полная автономность (нет сети / закрытый контур) — `local-ocr` (легко) или
-  `local-vision` (точнее, но нужен мощный ПК).
+Recommendations:
+- if you have internet and want the best result with minimal hassle — `cloud:gemini`;
+- if full autonomy matters (no network / air-gapped) — `local-ocr` (lightweight) or
+  `local-vision` (more accurate, but needs a capable PC).
 
-## Локальная модель и Ollama
+## Local model and Ollama
 
-Движок `local-vision` обращается к локальному серверу
-[Ollama](https://ollama.com) по HTTP (`local.vision.ollama_host`, по умолчанию
-`http://localhost:11434`) и использует vision-модель (по умолчанию `moondream`).
+The `local-vision` engine talks to a local [Ollama](https://ollama.com) server
+over HTTP (`local.vision.ollama_host`, defaults to `http://localhost:11434`)
+and uses a vision model (defaults to `moondream`).
 
-Установка и загрузка модели — скриптами из `ollama_setup/`:
+Installing and pulling the model — via the scripts in `ollama_setup/`:
 
 - Windows (PowerShell):
   ```
@@ -307,69 +310,71 @@ http://localhost:8000/connect
   ./ollama_setup/install_and_pull.sh
   ```
 
-Скрипты проверяют наличие Ollama, при отсутствии устанавливают её, скачивают
-модель `moondream` и запускают `ollama serve`. Альтернативные модели (точнее,
-но тяжелее): `qwen2.5-vl:3b`, `gemma3:4b` — указываются в `local.vision.model`.
+The scripts check whether Ollama is installed, install it if not, pull the
+`moondream` model, and start `ollama serve`. Alternative models (more
+accurate but heavier): `qwen2.5-vl:3b`, `gemma3:4b` — set via `local.vision.model`.
 
-Движок `local-ocr` использует Tesseract и Ollama не требует. Установите системный
-Tesseract и языковые пакеты `rus`, `eng`:
-- Windows: установщик UB Mannheim (https://github.com/UB-Mannheim/tesseract/wiki);
+The `local-ocr` engine uses Tesseract and doesn't need Ollama. Install the
+system Tesseract binary along with the `rus` and `eng` language packs:
+- Windows: the UB Mannheim installer (https://github.com/UB-Mannheim/tesseract/wiki);
 - macOS: `brew install tesseract tesseract-lang`;
 - Linux (Debian/Ubuntu): `sudo apt install tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng`.
 
-## Сборка инсталлятора в одно действие (Windows)
+## One-step installer build (Windows)
 
-Самый простой способ собрать готовый инсталлятор — запустить один скрипт.
-**Ничего заранее ставить не нужно** — скрипт сам проверит и при отсутствии
-установит Python и Inno Setup.
+The simplest way to build a ready-to-use installer is to run a single
+script. **Nothing needs to be installed beforehand** — the script checks
+for and installs Python and Inno Setup itself if they're missing.
 
-Просто запустите (двойным кликом):
+Just run (double-click):
 
 ```
 installer\build_all.bat
 ```
 
-Что произойдёт:
+What happens:
 
-1. `build_all.bat` запустит `build_all.ps1` (PowerShell).
-2. Скрипт проверит наличие **Python** и **Inno Setup 6**. Если их нет — установит
-   автоматически: сначала пробует **winget** (встроен в Windows 10/11), а если его
-   нет — скачивает официальные установщики и ставит тихо. Для установки появится
-   запрос прав администратора (**UAC**) — подтвердите его.
-3. Создаст окружение, поставит зависимости, соберёт `.exe` (PyInstaller) и
-   скомпилирует инсталлятор (Inno Setup).
+1. `build_all.bat` launches `build_all.ps1` (PowerShell).
+2. The script checks for **Python** and **Inno Setup 6**. If they're missing, it
+   installs them automatically: first it tries **winget** (built into Windows
+   10/11), and if that's unavailable, it downloads the official installers and
+   installs them silently. Installation will trigger an administrator
+   (**UAC**) prompt — approve it.
+3. It creates the environment, installs dependencies, builds the `.exe`
+   (PyInstaller), and compiles the installer (Inno Setup).
 
-Единственное требование — **интернет** на время сборки (для установки компонентов
-и зависимостей). Готовый установочный файл появится в папке **`installer\Output\`**.
+The only requirement is **internet access** during the build (for installing
+components and dependencies). The finished installer file appears in the
+**`installer\Output\`** folder.
 
-> Если авто-установка не сработала (нет интернета / корпоративные ограничения) —
-> поставьте вручную **Python 3.9+** (https://www.python.org/downloads/, галочка
-> «Add Python to PATH») и **Inno Setup 6** (https://jrsoftware.org/isdl.php),
-> затем снова запустите `build_all.bat`.
+> If auto-install didn't work (no internet / corporate restrictions) —
+> install **Python 3.9+** manually (https://www.python.org/downloads/, check
+> "Add Python to PATH") and **Inno Setup 6** (https://jrsoftware.org/isdl.php),
+> then run `build_all.bat` again.
 
-Если нужно собирать шаги вручную или разобраться, что происходит внутри —
-смотрите раздел ниже.
+If you need to run the steps manually, or want to understand what happens
+under the hood — see the section below.
 
-## Сборка Windows-инсталлятора вручную
+## Building the Windows installer manually
 
-Для распространения на ПК без Python можно собрать один `.exe` и инсталлятор.
-Заготовки лежат в `installer/`.
+To distribute to a PC without Python, you can build a single `.exe` and an
+installer. The templates live in `installer/`.
 
-1. Соберите исполняемый файл через PyInstaller:
+1. Build the executable via PyInstaller:
    ```
    pip install pyinstaller
    pyinstaller installer\build_exe.spec
    ```
-   Результат появится в `dist/` (вместе с включённой папкой `app/web`).
+   The result appears in `dist/` (with the `app/web` folder bundled in).
 
-2. Соберите инсталлятор через [Inno Setup](https://jrsoftware.org/isinfo.php):
-   откройте `installer\installer.iss` в Inno Setup Compiler и нажмите Compile,
-   либо из консоли:
+2. Build the installer via [Inno Setup](https://jrsoftware.org/isinfo.php):
+   open `installer\installer.iss` in the Inno Setup Compiler and click
+   Compile, or from the console:
    ```
    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\installer.iss
    ```
-   Инсталлятор поставит exe, создаст ярлык и при первом запуске может вызвать
-   `ollama_setup` для локальной модели.
+   The installer will install the exe, create a shortcut, and may invoke
+   `ollama_setup` on first run for the local model.
 
-Внимательно проверьте плейсхолдеры в обоих файлах (пути, имя приложения,
-версия) перед сборкой — они помечены комментариями.
+Double-check the placeholders in both files (paths, app name, version)
+before building — they're marked with comments.
