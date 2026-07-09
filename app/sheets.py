@@ -56,6 +56,21 @@ def _photo_cell(photo_ref: str) -> str:
     return photo_ref
 
 
+def _safe_text(value: str) -> str:
+    """Защищает текстовое значение от того, что Sheets примет его за формулу.
+
+    С value_input_option="USER_ENTERED" Google Sheets трактует ячейки,
+    начинающиеся с +, -, = или @, как формулу — реальная проблема для
+    международных телефонов вида "+7 (911)...": без этой защиты они
+    превращались в #ERROR! (обнаружено на живых данных 2026-07-09).
+    Ведущий апостроф — стандартный приём Sheets, чтобы форсировать
+    текстовый тип; в отображении ячейки он не виден.
+    """
+    if value and value[0] in ("+", "-", "=", "@"):
+        return "'" + value
+    return value
+
+
 def _col_letter(index: int) -> str:
     """Номер колонки (1-based) в букву A1-нотации (1->A, 27->AA и т.д.)."""
     letters = ""
@@ -83,10 +98,17 @@ class SheetsWriter:
     """
 
     #: Порядок колонок строго фиксирован — строки собираются под него.
+    #: "Кто добавил"/"Должность того кто добавил" — это те же поля, что
+    #: раньше назывались "Сотрудник"/"Должность сотрудника" (переименованы
+    #: и перенесены ближе к началу по просьбе пользователя 2026-07-09).
     HEADERS: List[str] = [
         "Дата добавления",
+        "Кто добавил",
+        "Должность того кто добавил",
         "Выставка / источник",
+        "Фото визитки",
         "Ответственный от продаж",
+        "Статус лида",
         "ФИО контакта",
         "Должность",
         "Компания (как на визитке)",
@@ -98,19 +120,17 @@ class SheetsWriter:
         "Уточнённый адрес",
         "Отрасль / сфера",
         "Проверенный сайт",
-        "Статус лида",
         "Комментарий",
-        "Фото визитки",
-        "Сотрудник",
-        "Должность сотрудника",
     ]
 
     #: Буквы колонок «Ответственный от продаж» / «Статус лида» / «Комментарий» —
-    #: совпадают с позицией в HEADERS (3-я, 15-я, 16-я), заданы явно, т.к.
-    #: используются в A1-диапазонах.
-    RESPONSIBLE_COL_LETTER = "C"
-    STATUS_COL_LETTER = "O"
-    COMMENT_COL_LETTER = "P"
+    #: совпадают с позицией в HEADERS (6-я, 7-я, 19-я), заданы явно, т.к.
+    #: используются в A1-диапазонах. Статус и Комментарий теперь НЕ соседние
+    #: колонки (в отличие от исходной раскладки) — read_statuses() читает их
+    #: тремя отдельными диапазонами, а не одним объединённым.
+    RESPONSIBLE_COL_LETTER = "F"
+    STATUS_COL_LETTER = "G"
+    COMMENT_COL_LETTER = "S"
 
     #: Фиксированный список статусов лида — выпадающий список в колонке
     #: «Статус лида». Меняется редко, поэтому не вынесен в конфиг (в отличие
@@ -224,11 +244,11 @@ class SheetsWriter:
         reps = self.config.sales_reps
         if not reps:
             return
-        self._apply_dropdown(ws, self.RESPONSIBLE_COL_LETTER, 2, list(reps))
+        self._apply_dropdown(ws, self.RESPONSIBLE_COL_LETTER, 5, list(reps))
 
     def _apply_lead_status_validation(self, ws) -> None:
         """Ставит data-validation (выпадающий список) на колонку «Статус лида»."""
-        self._apply_dropdown(ws, self.STATUS_COL_LETTER, 14, self.LEAD_STATUS_OPTIONS)
+        self._apply_dropdown(ws, self.STATUS_COL_LETTER, 6, self.LEAD_STATUS_OPTIONS)
 
     def _apply_dropdown(self, ws, col_letter: str, col_index0: int, options: List[str]) -> None:
         """Ставит data-validation (выпадающий список) на столбец col_letter, строки 2:1000.
@@ -323,10 +343,10 @@ class SheetsWriter:
     ) -> int:
         """Добавляет визитку в таблицу и возвращает номер добавленной строки.
 
-        Колонки «Ответственный от продаж» (3), «Статус лида» (15) и
-        «Комментарий» (16) остаются пустыми — их заполняет человек.
-        «Сотрудник»/«Должность сотрудника» (18-19) заполняются автоматически
-        из аккаунта, которым выполнен вход на телефоне.
+        Колонки «Ответственный от продаж», «Статус лида» и «Комментарий»
+        остаются пустыми — их заполняет человек. «Кто добавил»/«Должность
+        того кто добавил» заполняются автоматически из аккаунта, которым
+        выполнен вход на телефоне (не из тела запроса — подделать нельзя).
         """
         self.ensure_headers()
         ws = self._worksheet()
@@ -336,25 +356,25 @@ class SheetsWriter:
         emails = ", ".join(e for e in (card.emails or []) if e)
 
         row = [
-            date_str,             # Дата добавления
-            card.source_event,    # Выставка / источник
-            "",                   # Ответственный от продаж (заполняет человек)
-            card.name,            # ФИО контакта
-            card.title,           # Должность
-            card.company,         # Компания (как на визитке)
-            phones,               # Телефон(ы)
-            emails,               # Email
-            card.website,         # Сайт
-            card.address,         # Адрес (с визитки)
-            card.legal_name,      # Точное юр. название
-            card.refined_address,  # Уточнённый адрес
-            card.industry,        # Отрасль / сфера
-            card.verified_website,  # Проверенный сайт
-            "",                   # Статус лида (заполняет человек)
-            "",                   # Комментарий (заполняет человек)
-            _photo_cell(photo_ref),  # Фото визитки
-            scanned_by,            # Сотрудник
-            scanned_by_position,  # Должность сотрудника
+            date_str,                       # Дата добавления (реальная дата, не текст — не защищаем)
+            _safe_text(scanned_by),          # Кто добавил
+            _safe_text(scanned_by_position),  # Должность того кто добавил
+            _safe_text(card.source_event),   # Выставка / источник
+            _photo_cell(photo_ref),          # Фото визитки (настоящая формула — не защищаем)
+            "",                              # Ответственный от продаж (заполняет человек)
+            "",                              # Статус лида (заполняет человек)
+            _safe_text(card.name),           # ФИО контакта
+            _safe_text(card.title),          # Должность
+            _safe_text(card.company),        # Компания (как на визитке)
+            _safe_text(phones),              # Телефон(ы)
+            _safe_text(emails),              # Email
+            _safe_text(card.website),        # Сайт
+            _safe_text(card.address),        # Адрес (с визитки)
+            _safe_text(card.legal_name),     # Точное юр. название
+            _safe_text(card.refined_address),  # Уточнённый адрес
+            _safe_text(card.industry),       # Отрасль / сфера
+            _safe_text(card.verified_website),  # Проверенный сайт
+            "",                              # Комментарий (заполняет человек)
         ]
 
         ws.append_row(row, value_input_option="USER_ENTERED")
@@ -371,6 +391,8 @@ class SheetsWriter:
 
         Один батч-запрос (batch_get) на все строки сразу — вызывается на
         каждый /jobs с телефона, поэтому важно не делать по запросу на строку.
+        Три отдельных однонклеточных диапазона на строку (не два), т.к. после
+        переноса столбцов «Статус лида» и «Комментарий» больше не соседние.
         Возвращает {номер_строки: {"responsible": ..., "status": ..., "comment": ...}};
         строки, для которых Sheets не вернул значений, в результате отсутствуют.
         """
@@ -382,17 +404,18 @@ class SheetsWriter:
         ranges: List[str] = []
         for r in wanted:
             ranges.append("{0}{1}:{0}{1}".format(self.RESPONSIBLE_COL_LETTER, r))
-            ranges.append("{0}{2}:{1}{2}".format(self.STATUS_COL_LETTER, self.COMMENT_COL_LETTER, r))
+            ranges.append("{0}{1}:{0}{1}".format(self.STATUS_COL_LETTER, r))
+            ranges.append("{0}{1}:{0}{1}".format(self.COMMENT_COL_LETTER, r))
         grids = ws.batch_get(ranges)
 
         out: Dict[int, Dict[str, str]] = {}
         for i, row in enumerate(wanted):
-            resp_grid = grids[i * 2]
-            status_grid = grids[i * 2 + 1]
+            resp_grid = grids[i * 3]
+            status_grid = grids[i * 3 + 1]
+            comment_grid = grids[i * 3 + 2]
             responsible = resp_grid[0][0] if resp_grid and resp_grid[0] else ""
-            values = status_grid[0] if status_grid else []
-            status = values[0] if len(values) > 0 else ""
-            comment = values[1] if len(values) > 1 else ""
+            status = status_grid[0][0] if status_grid and status_grid[0] else ""
+            comment = comment_grid[0][0] if comment_grid and comment_grid[0] else ""
             out[row] = {
                 "responsible": str(responsible).strip(),
                 "status": str(status).strip(),
