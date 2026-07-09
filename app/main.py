@@ -26,7 +26,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, Response
@@ -144,28 +144,38 @@ async def auth_bootstrap_status() -> Dict[str, Any]:
 
 
 @app.post("/api/auth/bootstrap")
-async def auth_bootstrap(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def auth_bootstrap(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
     """Создаёт первого пользователя (админа). Работает только пока пользователей нет вовсе."""
+    ip = auth.client_ip(request)
+    if not auth.check_rate_limit(ip):
+        raise HTTPException(status_code=429, detail="Слишком много попыток, попробуйте позже")
     username = str(payload.get("username") or "")
     password = str(payload.get("password") or "")
     position = str(payload.get("position") or "")
     try:
         user = await auth.bootstrap_admin(username, password, position)
     except PermissionError as exc:
+        auth.record_failed_attempt(ip)
         raise HTTPException(status_code=409, detail=str(exc))
     except ValueError as exc:
+        auth.record_failed_attempt(ip)
         raise HTTPException(status_code=400, detail=str(exc))
     token = await auth.create_session(user["username"])
     return {"token": token, "user": user}
 
 
 @app.post("/api/auth/login")
-async def auth_login(payload: Dict[str, Any]) -> Dict[str, Any]:
+async def auth_login(request: Request, payload: Dict[str, Any]) -> Dict[str, Any]:
+    ip = auth.client_ip(request)
+    if not auth.check_rate_limit(ip):
+        raise HTTPException(status_code=429, detail="Слишком много попыток входа, попробуйте позже")
     username = str(payload.get("username") or "")
     password = str(payload.get("password") or "")
     user = await auth.authenticate(username, password)
     if not user:
+        auth.record_failed_attempt(ip)
         raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    auth.clear_failed_attempts(ip)
     token = await auth.create_session(user["username"])
     return {"token": token, "user": user}
 
@@ -241,6 +251,27 @@ async def service_worker() -> Any:
 
 # ---------- Подключение телефона к ПК (автопоиск + QR) ----------
 
+def _ngrok_public_url() -> Optional[str]:
+    """Спрашивает у локального API ngrok (127.0.0.1:4040), поднят ли туннель
+    удалённого доступа, и возвращает его текущий публичный HTTPS-адрес.
+
+    ngrok — отдельный процесс (запускается из run.bat, если настроен
+    remote.ngrok_domain), поэтому его API может быть недоступен — это просто
+    значит, что удалённый доступ сейчас не поднят, не ошибка.
+    """
+    try:
+        import httpx  # уже основная зависимость проекта
+
+        resp = httpx.get("http://127.0.0.1:4040/api/tunnels", timeout=0.3)
+        data = resp.json()
+        for t in data.get("tunnels") or []:
+            if t.get("proto") == "https":
+                return t.get("public_url")
+    except Exception:
+        pass
+    return None
+
+
 def _server_info() -> Dict[str, Any]:
     cfg = _config(app)
     port = int(cfg.get("server.port", 8000))
@@ -254,6 +285,7 @@ def _server_info() -> Dict[str, Any]:
         "hostname_url": "http://{}.local:{}".format(hostname, port),
         "port": port,
         "version": __version__,
+        "remote_url": _ngrok_public_url(),
     }
 
 
@@ -284,6 +316,27 @@ async def qr_png() -> Any:
         img.save(buf, format="PNG")
         return Response(content=buf.getvalue(), media_type="image/png")
     except Exception as exc:  # qrcode не установлен или ошибка генерации
+        raise HTTPException(
+            status_code=503,
+            detail="QR недоступен ({}). Откройте вручную: {}".format(exc, target),
+        )
+
+
+@app.get("/qr-remote.png")
+async def qr_remote_png() -> Any:
+    """QR-код на публичный адрес (через ngrok) — только если туннель поднят."""
+    target = _ngrok_public_url()
+    if not target:
+        raise HTTPException(status_code=404, detail="Удалённый туннель сейчас не поднят")
+    try:
+        import io
+        import qrcode  # ленивый импорт
+
+        img = qrcode.make(target)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        return Response(content=buf.getvalue(), media_type="image/png")
+    except Exception as exc:
         raise HTTPException(
             status_code=503,
             detail="QR недоступен ({}). Откройте вручную: {}".format(exc, target),

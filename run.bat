@@ -34,6 +34,23 @@ if not exist "config.yaml" (
     echo [warn] Откройте config.yaml и заполните настройки (движок, ключи, Google Sheets).
 )
 
+REM --- Удалённый доступ через интернет (необязательно) ---
+REM Домен читается из config.yaml (remote.ngrok_domain) — см. config.example.yaml
+REM за инструкцией по настройке ngrok. Пусто -> используется только локальная сеть.
+set NGROK_DOMAIN=
+for /f "usebackq delims=" %%i in (`python -c "from app.config import Config; print(Config.load().get('remote.ngrok_domain','') or '')" 2^>nul`) do set NGROK_DOMAIN=%%i
+
+if not "%NGROK_DOMAIN%"=="" (
+    where ngrok >nul 2>nul
+    if errorlevel 1 (
+        echo [warn] ngrok не найден в PATH — удалённый доступ не запущен.
+        echo [warn] Установите: winget install Ngrok.Ngrok, затем ngrok config add-authtoken ^<ваш токен^>
+    ) else (
+        echo [info] Запускаю удалённый туннель: https://%NGROK_DOMAIN%
+        start "CardScan — удалённый доступ" ngrok http --url=%NGROK_DOMAIN% 8000
+    )
+)
+
 REM --- Открыть браузер (сервер поднимется через пару секунд) ---
 start "" "http://localhost:8000"
 

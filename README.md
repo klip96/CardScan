@@ -275,6 +275,40 @@ and follow the link — the same capture page opens.
   a regular home Wi-Fi network, or connect via a direct IP address or the
   QR code.
 
+## Remote access over the internet (optional)
+
+Everything above requires the phone and PC to share a Wi-Fi network. If
+field reps need to log in from anywhere with internet access instead — a
+different office, mobile data, home — the server can be exposed through
+[ngrok](https://ngrok.com), a free tunneling service that gives it a stable
+public HTTPS address without touching your router (no port forwarding, no
+static IP, works behind CGNAT).
+
+Setup (one-time):
+
+1. Sign up at ngrok.com (free, no credit card).
+2. Install the client: `winget install Ngrok.Ngrok` (Windows) — see
+   [ngrok's docs](https://ngrok.com/docs/getting-started/) for macOS/Linux.
+3. Copy your authtoken from https://dashboard.ngrok.com/get-started/your-authtoken
+   and run: `ngrok config add-authtoken <your token>`
+4. Claim a free persistent domain at https://dashboard.ngrok.com/domains
+   (something like `cardscan-office.ngrok-free.dev` — it won't change on restart).
+5. Put that domain in `config.yaml` under `remote.ngrok_domain` (see
+   `config.example.yaml` for the exact key). `run.bat` reads it from there
+   and starts the tunnel automatically alongside the server; leave it blank
+   to only use the local network as before.
+
+**Before opening this up, create the first admin account locally** (open
+`http://localhost:8000/login` on the PC itself while it's still LAN-only) —
+otherwise anyone who finds the public URL before you do could claim the
+first admin account. Once at least one account exists, this is no longer
+possible (`/api/auth/bootstrap` only works while zero users exist).
+
+Once the tunnel is running, its address and a QR code for it show up
+automatically at `http://localhost:8000/connect`, right below the local
+network's. Login attempts are rate-limited (10 per 15 minutes per IP) since
+the login page is now reachable from the public internet, not just your LAN.
+
 ## Choosing a recognition engine: cloud vs local
 
 The engine is set via the `recognizer` field in `config.yaml` or in the settings UI.

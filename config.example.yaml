@@ -61,3 +61,14 @@ server:
 
 storage:
   photos_dir: "data/photos"     # куда сохраняются снимки визиток
+
+# Удалённый доступ через интернет (необязательно — без этого работает
+# обычный локальный/Wi-Fi доступ). Как настроить:
+#   1. Зарегистрируйтесь на ngrok.com (бесплатно, без карты) и поставьте
+#      клиент: winget install Ngrok.Ngrok
+#   2. ngrok config add-authtoken <ваш токен с dashboard.ngrok.com>
+#   3. Закрепите бесплатный домен на dashboard.ngrok.com/domains и впишите
+#      его сюда.
+# run.bat сам поднимет туннель при старте, если поле не пустое.
+remote:
+  ngrok_domain: ""             # например: cardscan-office.ngrok-free.dev

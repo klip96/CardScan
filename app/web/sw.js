@@ -26,6 +26,7 @@ const DYNAMIC_PATHS = [
   "/upload",
   "/jobs",
   "/qr.png",
+  "/qr-remote.png",
   "/api/",
   "/settings",
   "/photos/",

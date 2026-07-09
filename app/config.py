@@ -59,6 +59,10 @@ DEFAULTS: Dict[str, Any] = {
     "sales_reps": ["Иванов", "Петров", "Сидорова"],
     "server": {"host": "0.0.0.0", "port": 8000},
     "storage": {"photos_dir": "data/photos"},
+    # Удалённый доступ через интернет (необязательно, LAN и так работает без
+    # этого). ngrok_domain — закреплённый домен с dashboard.ngrok.com/domains;
+    # run.bat читает его отсюда и поднимает `ngrok http --url=<домен> <порт>`.
+    "remote": {"ngrok_domain": ""},
 }
 
 
