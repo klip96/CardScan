@@ -92,6 +92,7 @@ class JobManager:
         self._order: List[str] = []  # порядок поступления
         self._worker_task: Optional[asyncio.Task] = None
         self._writer: Optional[Any] = None  # кэш SheetsWriter (авторизация не на каждый вызов)
+        self._last_status_refresh: float = 0.0  # троттлинг чтения статусов из Sheets
 
     # ----- управление жизненным циклом -----
     def start(self) -> None:
@@ -149,15 +150,29 @@ class JobManager:
             self._writer = SheetsWriter(self.config)
         return self._writer
 
+    #: Не чаще, чем раз в столько секунд, реально ходим в Sheets за статусами —
+    #: /jobs вызывается каждые 1.5с с КАЖДОГО телефона, и без троттлинга это
+    #: быстро упирается в квоту Google Sheets API "read requests per minute
+    #: per user" (сервисный аккаунт один на всё приложение, лимит общий на
+    #: всех). Статус обработки джоба (queued/recognizing/...) при этом
+    #: обновляется на каждый /jobs как раньше — троттлится только чтение
+    #: статуса лида из таблицы.
+    STATUS_REFRESH_MIN_INTERVAL_SEC = 10.0
+
     async def refresh_lead_statuses(self) -> None:
         """Подтягивает статус лида/комментарий/ответственного из Google Sheets.
 
-        Вызывается на каждый /jobs (поллинг с телефона), поэтому все номера
-        строк читаются ОДНИМ батч-запросом, а не по одному на визитку.
-        Ошибки (нет сети, не настроена таблица) не критичны — просто не
-        обновляем статусы в этом тике.
+        Вызывается на каждый /jobs (поллинг с телефона), но реально читает
+        таблицу не чаще STATUS_REFRESH_MIN_INTERVAL_SEC — см. её докстринг.
+        Номера строк читаются ОДНИМ батч-запросом, а не по одному на визитку.
+        Ошибки (нет сети, не настроена таблица, квота) не критичны — просто
+        не обновляем статусы в этом тике.
         """
         if not self.config.get("google_sheets.enabled", True):
+            return
+
+        now = time.time()
+        if now - self._last_status_refresh < self.STATUS_REFRESH_MIN_INTERVAL_SEC:
             return
 
         targets = [j for j in self._jobs.values() if j.sheet_rows]
@@ -167,6 +182,7 @@ class JobManager:
         if not rows:
             return
 
+        self._last_status_refresh = now
         try:
             statuses = await asyncio.to_thread(self._sheets_writer().read_statuses, rows)
         except Exception as exc:  # noqa: BLE001 — не критично для основного функционала
@@ -299,5 +315,17 @@ class JobManager:
         return rows
 
     def _photo_ref(self, job: Job) -> str:
-        # локальная ссылка на сохранённый снимок (доступна с того же ПК/сети)
-        return "/photos/" + job.photo_path.name
+        """Ссылка на снимок для колонки «Фото визитки» в Google Sheets.
+
+        Нужен ПОЛНЫЙ публичный адрес, а не относительный путь: Google Sheets
+        сам подтягивает картинку для формулы =IMAGE(...) со своих серверов,
+        а не через браузер пользователя, поэтому localhost/LAN-адрес не
+        подойдёт. Берём домен туннеля (remote.ngrok_domain), если он настроен.
+        Без него отдаём относительный путь как раньше — картинка в таблице
+        не отобразится, но остальной функционал не страдает.
+        """
+        rel = "/photos/" + job.photo_path.name
+        domain = str(self.config.get("remote.ngrok_domain", "") or "").strip()
+        if domain:
+            return "https://{0}{1}".format(domain, rel)
+        return rel

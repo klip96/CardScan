@@ -40,6 +40,22 @@ def extract_spreadsheet_id(value: str) -> str:
     return m.group(0) if m else value
 
 
+def _photo_cell(photo_ref: str) -> str:
+    """Значение ячейки «Фото визитки».
+
+    Для полного публичного URL (когда настроен туннель) отдаём формулу
+    =IMAGE(...), чтобы в таблице сразу была видна миниатюра, а не текст
+    ссылки — Google Sheets сам подтягивает картинку со своих серверов.
+    Для относительного пути (туннель не настроен) отдаём как есть.
+    Требует value_input_option="USER_ENTERED" при записи, иначе формула
+    попадёт в ячейку как текст, а не будет вычислена.
+    """
+    if photo_ref.startswith("http://") or photo_ref.startswith("https://"):
+        escaped = photo_ref.replace('"', '""')
+        return '=IMAGE("{0}", 4, 90, 130)'.format(escaped)
+    return photo_ref
+
+
 def _col_letter(index: int) -> str:
     """Номер колонки (1-based) в букву A1-нотации (1->A, 27->AA и т.д.)."""
     letters = ""
@@ -336,8 +352,8 @@ class SheetsWriter:
             card.verified_website,  # Проверенный сайт
             "",                   # Статус лида (заполняет человек)
             "",                   # Комментарий (заполняет человек)
-            photo_ref,            # Фото визитки
-            scanned_by,           # Сотрудник
+            _photo_cell(photo_ref),  # Фото визитки
+            scanned_by,            # Сотрудник
             scanned_by_position,  # Должность сотрудника
         ]
 
