@@ -1,4 +1,4 @@
-# Собирает debug-APK CardScan-приложения (Capacitor WebView-обёртка).
+﻿# Собирает debug-APK CardScan-приложения (Capacitor WebView-обёртка).
 # Запускать из ОБЫЧНОГО PowerShell/Terminal (не из песочницы агента) —
 # см. заметку про "Unable to establish loopback connection" в README.md.
 #
