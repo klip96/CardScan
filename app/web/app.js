@@ -11,11 +11,13 @@
  *                 -> { "job_id": "..." }
  *   GET  /jobs    -> { "jobs": [ { id, status, created_at, source_event,
  *                                  filename, result|null, results|null, error|null,
- *                                  sheet_rows|null, lead_statuses|null, lead_comments|null } ] }
+ *                                  sheet_rows|null, lead_statuses|null, lead_comments|null,
+ *                                  lead_responsible|null } ] }
  *   Статусы обработки: queued | recognizing | enriching | writing | done | failed
- *   lead_statuses/lead_comments — статус лида и комментарий из Google Sheets
- *   (заполняет офис-менеджер), выровнены по индексу с results. Пустая строка —
- *   решение по лиду ещё не принято.
+ *   lead_statuses/lead_comments/lead_responsible — статус лида, комментарий и
+ *   ответственный от продаж из Google Sheets (заполняет офис-менеджер),
+ *   выровнены по индексу с results. Пустая строка — решение по лиду ещё не
+ *   принято / ответственный не назначен.
  */
 (function () {
   "use strict";
@@ -103,12 +105,13 @@
     failed: "failed"
   };
 
-  // Статус лида (колонка "Статус лида" в Google Sheets) — заполняется
-  // офис-менеджером вручную, значения не фиксированы жёстко, поэтому
-  // сравниваем без учёта регистра и красим только известные варианты.
+  // Статус лида (колонка "Статус лида" в Google Sheets, выпадающий список —
+  // см. SheetsWriter.LEAD_STATUS_OPTIONS). Сравниваем без учёта регистра;
+  // неизвестные значения (ручной ввод мимо списка) красим нейтральным цветом.
   var LEAD_STATUS_META = {
-    "взято в работу": { css: "lead-progress", icon: "🟠" },
+    "в работе": { css: "lead-progress", icon: "🟠" },
     "наш пользователь": { css: "lead-won", icon: "🟢" },
+    "давно нет контакта": { css: "lead-stale", icon: "⚪" },
     "решение конкурентов": { css: "lead-lost", icon: "🔴" }
   };
 
@@ -327,17 +330,31 @@
     return (arr[i] || "").trim();
   }
 
+  // Кто из отдела продаж отрабатывает лид (колонка "Ответственный от продаж").
+  function leadResponsibleFor(job, i) {
+    var arr = job.lead_responsible;
+    if (!arr || i >= arr.length) { return ""; }
+    return (arr[i] || "").trim();
+  }
+
   function leadStatusMeta(status) {
     return LEAD_STATUS_META[status.toLowerCase()] || { css: "lead-other", icon: "🔵" };
   }
 
-  // Бейдж статуса лида: <span class="lead-badge lead-...">🟢 текст</span>.
-  // title — комментарий менеджера (если есть), виден по долгому тапу/наведению.
-  function buildLeadBadge(status, comment) {
+  // Бейдж статуса лида: <span class="lead-badge lead-...">🟠 В работе — Иванов</span>.
+  // Ответственного показываем прямо в тексте (не в title) — на телефоне
+  // всплывающих подсказок по наведению нет, title по тапу не откроется.
+  // Комментарий менеджера всё же кладём в title — как необязательный бонус
+  // для тех, кто открывает ленту на ПК.
+  function buildLeadBadge(status, comment, responsible) {
     var meta = leadStatusMeta(status);
     var span = document.createElement("span");
     span.className = "lead-badge " + meta.css;
-    setText(span, meta.icon + " " + status);
+    var text = meta.icon + " " + status;
+    if (responsible) {
+      text += " — " + responsible;
+    }
+    setText(span, text);
     if (comment) {
       span.title = comment;
     }
@@ -410,7 +427,7 @@
         liCard.appendChild(textSpan);
         var statusMulti = leadStatusFor(job, k);
         if (statusMulti) {
-          liCard.appendChild(buildLeadBadge(statusMulti, leadCommentFor(job, k)));
+          liCard.appendChild(buildLeadBadge(statusMulti, leadCommentFor(job, k), leadResponsibleFor(job, k)));
         }
         ul.appendChild(liCard);
       }
@@ -421,7 +438,7 @@
       if (statusSingle) {
         var leadRow = document.createElement("div");
         leadRow.className = "job-lead-row";
-        leadRow.appendChild(buildLeadBadge(statusSingle, leadCommentFor(job, 0)));
+        leadRow.appendChild(buildLeadBadge(statusSingle, leadCommentFor(job, 0), leadResponsibleFor(job, 0)));
         body.appendChild(leadRow);
       }
     }

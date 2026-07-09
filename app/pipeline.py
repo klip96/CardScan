@@ -46,12 +46,14 @@ class Job:
     error: Optional[str] = None
     sheet_row: Optional[int] = None
     sheet_rows: Optional[List[int]] = None
-    # Статус лида ("взято в работу"/"наш пользователь"/"решение конкурентов")
-    # и комментарий из колонок Google Sheets — по одному на каждую визитку,
-    # выровнены по индексу с results/sheet_rows. Заполняются офис-менеджером
-    # в таблице и подтягиваются обратно через JobManager.refresh_lead_statuses().
+    # Статус лида (см. SheetsWriter.LEAD_STATUS_OPTIONS), комментарий и
+    # ответственный от продаж из колонок Google Sheets — по одному на каждую
+    # визитку, выровнены по индексу с results/sheet_rows. Заполняются офис-
+    # менеджером в таблице и подтягиваются обратно через
+    # JobManager.refresh_lead_statuses().
     lead_statuses: Optional[List[str]] = None
     lead_comments: Optional[List[str]] = None
+    lead_responsible: Optional[List[str]] = None
     # Кто снял визитку (логин + должность из аккаунта, не из тела запроса) —
     # пишется в таблицу отдельными колонками "Сотрудник"/"Должность сотрудника".
     scanned_by: str = ""
@@ -74,6 +76,7 @@ class Job:
             "sheet_rows": self.sheet_rows,
             "lead_statuses": self.lead_statuses,
             "lead_comments": self.lead_comments,
+            "lead_responsible": self.lead_responsible,
             "scanned_by": self.scanned_by,
             "scanned_by_position": self.scanned_by_position,
         }
@@ -147,7 +150,7 @@ class JobManager:
         return self._writer
 
     async def refresh_lead_statuses(self) -> None:
-        """Подтягивает статус лида/комментарий из Google Sheets для записанных визиток.
+        """Подтягивает статус лида/комментарий/ответственного из Google Sheets.
 
         Вызывается на каждый /jobs (поллинг с телефона), поэтому все номера
         строк читаются ОДНИМ батч-запросом, а не по одному на визитку.
@@ -173,6 +176,7 @@ class JobManager:
         for j in targets:
             j.lead_statuses = [(statuses.get(r) or {}).get("status", "") for r in j.sheet_rows]
             j.lead_comments = [(statuses.get(r) or {}).get("comment", "") for r in j.sheet_rows]
+            j.lead_responsible = [(statuses.get(r) or {}).get("responsible", "") for r in j.sheet_rows]
 
     # ----- воркер -----
     async def _worker_loop(self) -> None:

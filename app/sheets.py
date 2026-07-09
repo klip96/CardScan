@@ -89,10 +89,22 @@ class SheetsWriter:
         "Должность сотрудника",
     ]
 
-    #: Буквы колонок «Статус лида» / «Комментарий» — совпадают с позицией
-    #: в HEADERS (15-я и 16-я), заданы явно, т.к. используются в A1-диапазонах.
+    #: Буквы колонок «Ответственный от продаж» / «Статус лида» / «Комментарий» —
+    #: совпадают с позицией в HEADERS (3-я, 15-я, 16-я), заданы явно, т.к.
+    #: используются в A1-диапазонах.
+    RESPONSIBLE_COL_LETTER = "C"
     STATUS_COL_LETTER = "O"
     COMMENT_COL_LETTER = "P"
+
+    #: Фиксированный список статусов лида — выпадающий список в колонке
+    #: «Статус лида». Меняется редко, поэтому не вынесен в конфиг (в отличие
+    #: от sales_reps, который список людей и настраивается через /setup).
+    LEAD_STATUS_OPTIONS: List[str] = [
+        "В работе",
+        "Наш пользователь",
+        "Давно нет контакта",
+        "Решение конкурентов",
+    ]
 
     def __init__(self, config: "Config"):
         self.config = config
@@ -189,16 +201,28 @@ class SheetsWriter:
             ws.update("{0}1".format(start_col), [missing])
 
         self._apply_sales_validation(ws)
+        self._apply_lead_status_validation(ws)
 
     def _apply_sales_validation(self, ws) -> None:
-        """Ставит data-validation (выпадающий список) на колонку «Ответственный от продаж».
-
-        Колонка — индекс 3 в HEADERS, столбец C. Если версия gspread не
-        поддерживает нужный API — тихо пропускаем (без падения).
-        """
+        """Ставит data-validation (выпадающий список) на колонку «Ответственный от продаж»."""
         reps = self.config.sales_reps
         if not reps:
             return
+        self._apply_dropdown(ws, self.RESPONSIBLE_COL_LETTER, 2, list(reps))
+
+    def _apply_lead_status_validation(self, ws) -> None:
+        """Ставит data-validation (выпадающий список) на колонку «Статус лида»."""
+        self._apply_dropdown(ws, self.STATUS_COL_LETTER, 14, self.LEAD_STATUS_OPTIONS)
+
+    def _apply_dropdown(self, ws, col_letter: str, col_index0: int, options: List[str]) -> None:
+        """Ставит data-validation (выпадающий список) на столбец col_letter, строки 2:1000.
+
+        col_index0 — индекс столбца с отсчётом от 0 (для нативного batch_update API).
+        Если версия gspread не поддерживает нужный API — тихо пропускаем (без падения).
+        """
+        if not options:
+            return
+        rng = "{0}2:{0}1000".format(col_letter)
 
         # Сначала пробуем удобный helper gspread (новые версии).
         try:
@@ -212,10 +236,10 @@ class SheetsWriter:
         else:
             try:
                 rule = DataValidationRule(
-                    BooleanCondition("ONE_OF_LIST", list(reps)),
+                    BooleanCondition("ONE_OF_LIST", list(options)),
                     showCustomUi=True,
                 )
-                set_data_validation_for_cell_range(ws, "C2:C1000", rule)
+                set_data_validation_for_cell_range(ws, rng, rule)
                 return
             except Exception:
                 # gspread_formatting есть, но что-то пошло не так — пробуем batch_update.
@@ -232,14 +256,14 @@ class SheetsWriter:
                                 "sheetId": ws.id,
                                 "startRowIndex": 1,
                                 "endRowIndex": 1000,
-                                "startColumnIndex": 2,  # столбец C
-                                "endColumnIndex": 3,
+                                "startColumnIndex": col_index0,
+                                "endColumnIndex": col_index0 + 1,
                             },
                             "rule": {
                                 "condition": {
                                     "type": "ONE_OF_LIST",
                                     "values": [
-                                        {"userEnteredValue": str(r)} for r in reps
+                                        {"userEnteredValue": str(o)} for o in options
                                     ],
                                 },
                                 "showCustomUi": True,
@@ -327,28 +351,35 @@ class SheetsWriter:
 
     # ----- обратное чтение статуса лида (для синхронизации в мобильное приложение) -----
     def read_statuses(self, rows: List[int]) -> Dict[int, Dict[str, str]]:
-        """Читает «Статус лида» и «Комментарий» для заданных номеров строк.
+        """Читает «Ответственного», «Статус лида» и «Комментарий» для заданных строк.
 
         Один батч-запрос (batch_get) на все строки сразу — вызывается на
         каждый /jobs с телефона, поэтому важно не делать по запросу на строку.
-        Возвращает {номер_строки: {"status": ..., "comment": ...}}; строки,
-        для которых Sheets не вернул значений, в результате отсутствуют.
+        Возвращает {номер_строки: {"responsible": ..., "status": ..., "comment": ...}};
+        строки, для которых Sheets не вернул значений, в результате отсутствуют.
         """
         wanted = sorted({r for r in rows if r and r > 1})
         if not wanted:
             return {}
 
         ws = self._worksheet()
-        ranges = [
-            "{0}{2}:{1}{2}".format(self.STATUS_COL_LETTER, self.COMMENT_COL_LETTER, r)
-            for r in wanted
-        ]
+        ranges: List[str] = []
+        for r in wanted:
+            ranges.append("{0}{1}:{0}{1}".format(self.RESPONSIBLE_COL_LETTER, r))
+            ranges.append("{0}{2}:{1}{2}".format(self.STATUS_COL_LETTER, self.COMMENT_COL_LETTER, r))
         grids = ws.batch_get(ranges)
 
         out: Dict[int, Dict[str, str]] = {}
-        for row, grid in zip(wanted, grids):
-            values = grid[0] if grid else []
+        for i, row in enumerate(wanted):
+            resp_grid = grids[i * 2]
+            status_grid = grids[i * 2 + 1]
+            responsible = resp_grid[0][0] if resp_grid and resp_grid[0] else ""
+            values = status_grid[0] if status_grid else []
             status = values[0] if len(values) > 0 else ""
             comment = values[1] if len(values) > 1 else ""
-            out[row] = {"status": str(status).strip(), "comment": str(comment).strip()}
+            out[row] = {
+                "responsible": str(responsible).strip(),
+                "status": str(status).strip(),
+                "comment": str(comment).strip(),
+            }
         return out

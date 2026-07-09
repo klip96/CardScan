@@ -10,6 +10,8 @@ __pycache__/
 # --- Локальная конфигурация и секреты (НЕ коммитить) ---
 config.yaml
 service_account.json
+gen-lang-client-*.json
+Key_*/
 
 # --- Данные времени выполнения ---
 data/photos/
